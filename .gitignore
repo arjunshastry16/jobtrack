@@ -1,0 +1,22 @@
+# Binaries and build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Secrets: only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# Frontend
+web/node_modules/
+web/dist/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
