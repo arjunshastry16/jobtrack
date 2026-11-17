@@ -1,5 +1,7 @@
 # jobtrack
 
+[![CI](https://github.com/arjunshastry16/jobtrack/actions/workflows/ci.yml/badge.svg)](https://github.com/arjunshastry16/jobtrack/actions/workflows/ci.yml)
+
 A self-hosted job-search tracker, written in Go and run like a production service on a Raspberry Pi 5.
 
 > 🚧 Work in progress. It is being built in small, reviewable steps.
