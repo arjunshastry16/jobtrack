@@ -17,6 +17,7 @@ import (
 	"github.com/arjunshastry16/jobtrack/internal/config"
 	"github.com/arjunshastry16/jobtrack/internal/db"
 	"github.com/arjunshastry16/jobtrack/internal/httpapi"
+	"github.com/arjunshastry16/jobtrack/internal/requestid"
 	"github.com/arjunshastry16/jobtrack/internal/store"
 )
 
@@ -42,7 +43,8 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	// LogHandler adds request_id to every line logged with a request context.
+	logger := slog.New(requestid.LogHandler{Handler: slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: cfg.LogLevel})})
 
 	pool, err := db.Open(ctx, cfg.DatabaseURL)
 	if err != nil {

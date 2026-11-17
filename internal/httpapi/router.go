@@ -23,7 +23,13 @@ type Deps struct {
 	DB      Pinger
 	Store   store.Querier
 	Logger  *slog.Logger
+	// RequestTimeout bounds each request; zero means defaultRequestTimeout.
+	RequestTimeout time.Duration
 }
+
+// defaultRequestTimeout is below the server's 15s WriteTimeout, so a slow handler gets
+// a clean cancellation (and a logged error) rather than a silently cut connection.
+const defaultRequestTimeout = 10 * time.Second
 
 // api holds what the resource handlers share.
 type api struct {
@@ -45,7 +51,16 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/companies/{id}", a.getCompany)
 	mux.HandleFunc("PUT /api/v1/companies/{id}", a.updateCompany)
 	mux.HandleFunc("DELETE /api/v1/companies/{id}", a.deleteCompany)
-	return mux
+
+	timeout := d.RequestTimeout
+	if timeout == 0 {
+		timeout = defaultRequestTimeout
+	}
+	// See middleware.go for why the order matters.
+	return withRequestID(
+		withTimeout(timeout,
+			accessLog(d.Logger,
+				recoverPanics(d.Logger, mux))))
 }
 
 // handleHealthz reports that the process is up and serving HTTP (liveness).
