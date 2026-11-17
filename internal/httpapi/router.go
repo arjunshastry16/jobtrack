@@ -3,10 +3,11 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/arjunshastry16/jobtrack/internal/store"
 )
 
 // Pinger is anything that can check it can reach the database. *pgxpool.Pool satisfies it;
@@ -20,15 +21,30 @@ type Pinger interface {
 type Deps struct {
 	Version string
 	DB      Pinger
+	Store   store.Querier
 	Logger  *slog.Logger
+}
+
+// api holds what the resource handlers share.
+type api struct {
+	store  store.Querier
+	logger *slog.Logger
 }
 
 // NewRouter returns the service's HTTP handler.
 func NewRouter(d Deps) http.Handler {
+	a := &api{store: d.Store, logger: d.Logger}
+
 	mux := http.NewServeMux()
-	// Go 1.22+ patterns: the method is part of the route, so POST /healthz gets a 405 for free.
+	// Go 1.22+ patterns: the method is part of the route, so e.g. POST /healthz gets a 405 for free.
 	mux.HandleFunc("GET /healthz", handleHealthz(d.Version))
 	mux.HandleFunc("GET /readyz", handleReadyz(d.DB, d.Logger))
+
+	mux.HandleFunc("POST /api/v1/companies", a.createCompany)
+	mux.HandleFunc("GET /api/v1/companies", a.listCompanies)
+	mux.HandleFunc("GET /api/v1/companies/{id}", a.getCompany)
+	mux.HandleFunc("PUT /api/v1/companies/{id}", a.updateCompany)
+	mux.HandleFunc("DELETE /api/v1/companies/{id}", a.deleteCompany)
 	return mux
 }
 
@@ -67,12 +83,4 @@ func handleReadyz(db Pinger, logger *slog.Logger) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, response{Status: "ready", Database: "ok"})
 	}
-}
-
-// writeJSON encodes v as the response body with the given status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	// The status line is already sent, so an encode error can't change the response; ignore it.
-	_ = json.NewEncoder(w).Encode(v)
 }

@@ -52,6 +52,12 @@ migrate-down: ## Roll back the latest migration
 migrate-status: ## Show which migrations are applied
 	go run ./cmd/migrate status
 
+SQLC_IMAGE := sqlc/sqlc:1.31.1
+
+.PHONY: generate
+generate: ## Regenerate internal/store from SQL (runs sqlc in Docker)
+	docker run --rm --user "$$(id -u):$$(id -g)" --volume "$(CURDIR):/src" --workdir /src $(SQLC_IMAGE) generate
+
 .PHONY: test
 test: ## Run all tests (with the race detector where supported)
 	go test $(RACE_FLAG) -count=1 ./...

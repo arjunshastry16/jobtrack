@@ -17,6 +17,7 @@ import (
 	"github.com/arjunshastry16/jobtrack/internal/config"
 	"github.com/arjunshastry16/jobtrack/internal/db"
 	"github.com/arjunshastry16/jobtrack/internal/httpapi"
+	"github.com/arjunshastry16/jobtrack/internal/store"
 )
 
 // version is overwritten at build time with -ldflags "-X main.version=<git sha>".
@@ -51,7 +52,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	defer pool.Close()
 
 	srv := &http.Server{
-		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Logger: logger}),
+		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Store: store.New(pool), Logger: logger}),
 		// Timeouts stop slow or stuck clients from holding connections open forever.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

@@ -17,11 +17,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
-	"github.com/pressly/goose/v3"
-
 	"github.com/arjunshastry16/jobtrack/internal/config"
-	"github.com/arjunshastry16/jobtrack/migrations"
+	"github.com/arjunshastry16/jobtrack/internal/dbmigrate"
 )
 
 func main() {
@@ -49,9 +46,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, out io.
 	}
 	defer func() { _ = db.Close() }()
 
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	provider, err := dbmigrate.NewProvider(db)
 	if err != nil {
-		return fmt.Errorf("load migrations: %w", err)
+		return err
 	}
 
 	switch args[0] {

@@ -30,10 +30,41 @@ jobs:
         with:
           version: v2.15.0 # keep in step with the local install
 
+  generated:
+    name: Generated code up to date
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Same pinned sqlc image as `make generate`. Fails if someone edited SQL
+      # (or generated Go) without regenerating.
+      - name: Regenerate with sqlc
+        run: make generate
+      - name: Fail on drift
+        run: git diff --exit-code -- internal/store
+
   test:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Throwaway Postgres for integration tests (same version as dev/prod). Each test
+    # creates and drops its own database on it.
+    services:
+      postgres:
+        image: postgres:18.7-alpine3.24
+        env:
+          POSTGRES_USER: jobtrack
+          POSTGRES_PASSWORD: jobtrack # CI-only throwaway container
+          POSTGRES_DB: jobtrack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jobtrack"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      JOBTRACK_TEST_DATABASE_URL: postgres://jobtrack:jobtrack@localhost:5432/postgres?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
