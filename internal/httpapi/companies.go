@@ -167,6 +167,12 @@ func (a *api) deleteCompany(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n, err := a.store.DeleteCompany(r.Context(), id)
+	if code := pgCode(err); code == pgRestrictViolation || code == pgForeignKeyViolation {
+		// applications.company_id is ON DELETE RESTRICT (SQLSTATE 23001): never silently
+		// delete someone's applications. 23503 is also accepted in case the FK is ever NO ACTION.
+		writeError(w, http.StatusConflict, codeConflict, "company still has applications; delete or move them first")
+		return
+	}
 	if err != nil {
 		a.internalError(w, r, err)
 		return

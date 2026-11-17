@@ -29,13 +29,36 @@ const (
 	codeBodyTooLarge     = "body_too_large"
 	codeValidationFailed = "validation_failed"
 	codeInvalidID        = "invalid_id"
+	codeInvalidQuery     = "invalid_query"
 	codeNotFound         = "not_found"
 	codeConflict         = "conflict"
 	codeInternal         = "internal"
 )
 
-// pgUniqueViolation is Postgres's SQLSTATE for a unique constraint violation.
-const pgUniqueViolation = "23505"
+// Postgres SQLSTATE codes the API maps to client errors.
+const (
+	pgUniqueViolation     = "23505"
+	pgForeignKeyViolation = "23503" // insert/update references a missing row (or NO ACTION delete)
+	pgRestrictViolation   = "23001" // delete blocked by an ON DELETE RESTRICT foreign key
+)
+
+// pgCode returns the Postgres SQLSTATE of err, or "" if it isn't a Postgres error.
+func pgCode(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code
+	}
+	return ""
+}
+
+// writeQueryError reports invalid query-string parameters (400).
+func writeQueryError(w http.ResponseWriter, fields map[string]string) {
+	writeJSON(w, http.StatusBadRequest, errorResponse{Error: apiError{
+		Code:    codeInvalidQuery,
+		Message: "one or more query parameters are invalid",
+		Fields:  fields,
+	}})
+}
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, errorResponse{Error: apiError{Code: code, Message: message}})
@@ -54,11 +77,10 @@ func writeValidationError(w http.ResponseWriter, fields map[string]string) {
 // storeError maps a database error to a response: no rows -> 404, unique violation -> 409,
 // anything else -> 500 (logged, with no details sent to the client).
 func (a *api) storeError(w http.ResponseWriter, r *http.Request, err error, notFoundMsg, conflictMsg string) {
-	var pgErr *pgconn.PgError
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, codeNotFound, notFoundMsg)
-	case errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation:
+	case pgCode(err) == pgUniqueViolation:
 		writeError(w, http.StatusConflict, codeConflict, conflictMsg)
 	default:
 		a.internalError(w, r, err)

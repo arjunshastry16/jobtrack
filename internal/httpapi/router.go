@@ -52,6 +52,12 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("PUT /api/v1/companies/{id}", a.updateCompany)
 	mux.HandleFunc("DELETE /api/v1/companies/{id}", a.deleteCompany)
 
+	mux.HandleFunc("POST /api/v1/applications", a.createApplication)
+	mux.HandleFunc("GET /api/v1/applications", a.listApplications)
+	mux.HandleFunc("GET /api/v1/applications/{id}", a.getApplication)
+	mux.HandleFunc("PUT /api/v1/applications/{id}", a.updateApplication)
+	mux.HandleFunc("DELETE /api/v1/applications/{id}", a.deleteApplication)
+
 	timeout := d.RequestTimeout
 	if timeout == 0 {
 		timeout = defaultRequestTimeout

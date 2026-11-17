@@ -8,6 +8,21 @@ import (
 	"time"
 )
 
+type Application struct {
+	ID             int64
+	CompanyID      int64
+	Role           string
+	JobUrl         *string
+	Source         *string
+	Location       *string
+	SalaryMin      *int32
+	SalaryMax      *int32
+	SalaryCurrency *string
+	Status         string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type Company struct {
 	ID        int64
 	Name      string
