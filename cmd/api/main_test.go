@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -31,8 +32,21 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// unreachableDB points at a port nothing listens on, so the database is "down".
-const unreachableDB = "postgres://u@127.0.0.1:1/db?connect_timeout=1"
+// unreachableDB returns a database URL for a port that was just freed, so connections
+// are refused immediately: the database is "down". (A fixed port like 1 isn't safe: on
+// some machines connections to it hang instead of being refused.)
+func unreachableDB(t *testing.T) string {
+	t.Helper()
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return "postgres://u@" + addr + "/db?connect_timeout=1"
+}
 
 // TestRunServesAndShutsDown starts the real server on a random port with the database
 // down, checks /healthz is 200 (alive) and /readyz is 503 (not ready), then cancels the
@@ -43,7 +57,7 @@ func TestRunServesAndShutsDown(t *testing.T) {
 
 	env := map[string]string{
 		"JOBTRACK_ADDR":         "127.0.0.1:0", // port 0: the OS picks a free port
-		"JOBTRACK_DATABASE_URL": unreachableDB,
+		"JOBTRACK_DATABASE_URL": unreachableDB(t),
 	}
 	logs := &syncBuffer{}
 
@@ -88,7 +102,7 @@ func getStatus(t *testing.T, url string) int {
 }
 
 func TestRunRejectsBadConfig(t *testing.T) {
-	env := map[string]string{"JOBTRACK_DATABASE_URL": unreachableDB, "JOBTRACK_LOG_LEVEL": "loud"}
+	env := map[string]string{"JOBTRACK_DATABASE_URL": unreachableDB(t), "JOBTRACK_LOG_LEVEL": "loud"}
 	err := run(context.Background(), func(k string) string { return env[k] }, &syncBuffer{})
 	if err == nil {
 		t.Fatal("run() = nil, want a config error")

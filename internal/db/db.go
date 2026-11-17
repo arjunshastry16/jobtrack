@@ -20,7 +20,10 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	cfg.MaxConns = 10
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	cfg.HealthCheckPeriod = 30 * time.Second
-	cfg.ConnConfig.ConnectTimeout = 5 * time.Second
+	// Default the dial timeout, but respect connect_timeout if the URL sets one.
+	if cfg.ConnConfig.ConnectTimeout == 0 {
+		cfg.ConnConfig.ConnectTimeout = 5 * time.Second
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
