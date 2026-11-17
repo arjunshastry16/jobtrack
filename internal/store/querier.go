@@ -6,21 +6,30 @@ package store
 
 import (
 	"context"
+	"time"
 )
 
 type Querier interface {
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (int64, error)
+	CreateApplicationEvent(ctx context.Context, arg CreateApplicationEventParams) (ApplicationEvent, error)
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	DeleteApplication(ctx context.Context, id int64) (int64, error)
 	DeleteCompany(ctx context.Context, id int64) (int64, error)
 	GetApplication(ctx context.Context, id int64) (GetApplicationRow, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
+	LatestApplicationEventTime(ctx context.Context, applicationID int64) (time.Time, error)
+	ListApplicationEvents(ctx context.Context, applicationID int64) ([]ApplicationEvent, error)
 	// ListApplications returns one page, newest first. Filters are optional (NULL = no
 	// filter). before_id is the keyset-pagination cursor: only rows older than the last
 	// row of the previous page. Callers ask for page_size+1 rows to learn if more exist.
 	//
 	ListApplications(ctx context.Context, arg ListApplicationsParams) ([]ListApplicationsRow, error)
 	ListCompanies(ctx context.Context, limit int32) ([]Company, error)
+	// LockApplicationStatus reads an application's status and locks its row until the
+	// transaction ends, so two concurrent stage changes can't both start from the same status.
+	//
+	LockApplicationStatus(ctx context.Context, id int64) (string, error)
+	SetApplicationStatus(ctx context.Context, arg SetApplicationStatusParams) error
 	// Status is deliberately not updatable here: stage changes will go through a
 	// dedicated transition endpoint that also records the history.
 	//

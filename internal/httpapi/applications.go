@@ -3,24 +3,17 @@ package httpapi
 import (
 	"fmt"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/arjunshastry16/jobtrack/internal/stages"
 	"github.com/arjunshastry16/jobtrack/internal/store"
 )
 
-// Application statuses, in rough pipeline order. Must match the CHECK constraint in
-// migrations/00002_create_applications.sql.
-var applicationStatuses = []string{
-	"wishlist", "applied", "screening", "interviewing",
-	"offer", "accepted", "rejected", "withdrawn",
-}
-
 const (
-	defaultApplicationStatus = "applied"
+	defaultApplicationStatus = stages.Applied
 	maxRoleLen               = 200
 	maxSourceLen             = 100
 	maxLocationLen           = 200
@@ -31,23 +24,30 @@ const (
 
 // applicationJSON is the API representation of an application.
 type applicationJSON struct {
-	ID             int64     `json:"id"`
-	CompanyID      int64     `json:"company_id"`
-	CompanyName    string    `json:"company_name"`
-	Role           string    `json:"role"`
-	JobURL         *string   `json:"job_url"`
-	Source         *string   `json:"source"`
-	Location       *string   `json:"location"`
-	SalaryMin      *int32    `json:"salary_min"`
-	SalaryMax      *int32    `json:"salary_max"`
-	SalaryCurrency *string   `json:"salary_currency"`
-	Status         string    `json:"status"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID             int64   `json:"id"`
+	CompanyID      int64   `json:"company_id"`
+	CompanyName    string  `json:"company_name"`
+	Role           string  `json:"role"`
+	JobURL         *string `json:"job_url"`
+	Source         *string `json:"source"`
+	Location       *string `json:"location"`
+	SalaryMin      *int32  `json:"salary_min"`
+	SalaryMax      *int32  `json:"salary_max"`
+	SalaryCurrency *string `json:"salary_currency"`
+	Status         string  `json:"status"`
+	// NextStatuses lists the valid moves from Status, so a UI can offer only those.
+	NextStatuses []string  `json:"next_statuses"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func toApplicationJSON(a store.Application, companyName string) applicationJSON {
+	next := stages.Next(a.Status)
+	if next == nil {
+		next = []string{} // encode as [] rather than null
+	}
 	return applicationJSON{
+		NextStatuses:   next,
 		ID:             a.ID,
 		CompanyID:      a.CompanyID,
 		CompanyName:    companyName,
@@ -167,8 +167,8 @@ func (a *api) createApplication(w http.ResponseWriter, r *http.Request) {
 	status := defaultApplicationStatus
 	if in.Status != nil {
 		status = *in.Status
-		if !slices.Contains(applicationStatuses, status) {
-			errs["status"] = "must be one of: " + strings.Join(applicationStatuses, ", ")
+		if !stages.Valid(status) {
+			errs["status"] = "must be one of: " + strings.Join(stages.All, ", ")
 		}
 	}
 	if len(errs) > 0 {
@@ -176,10 +176,21 @@ func (a *api) createApplication(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The application and its first history event are saved together or not at all.
 	f := in.applicationFields
-	id, err := a.store.CreateApplication(r.Context(), store.CreateApplicationParams{
-		CompanyID: f.CompanyID, Role: f.Role, JobUrl: f.JobURL, Source: f.Source, Location: f.Location,
-		SalaryMin: f.SalaryMin, SalaryMax: f.SalaryMax, SalaryCurrency: f.SalaryCurrency, Status: status,
+	ctx := r.Context()
+	var id int64
+	err := a.store.InTx(ctx, func(q store.Querier) error {
+		var err error
+		id, err = q.CreateApplication(ctx, store.CreateApplicationParams{
+			CompanyID: f.CompanyID, Role: f.Role, JobUrl: f.JobURL, Source: f.Source, Location: f.Location,
+			SalaryMin: f.SalaryMin, SalaryMax: f.SalaryMax, SalaryCurrency: f.SalaryCurrency, Status: status,
+		})
+		if err != nil {
+			return err
+		}
+		_, err = q.CreateApplicationEvent(ctx, store.CreateApplicationEventParams{ApplicationID: id, ToStatus: status})
+		return err
 	})
 	if pgCode(err) == pgForeignKeyViolation {
 		writeValidationError(w, map[string]string{"company_id": "does not exist"})
@@ -213,8 +224,8 @@ func (a *api) listApplications(w http.ResponseWriter, r *http.Request) {
 		errs["limit"] = err.Error()
 	}
 	if s := q.Get("status"); s != "" {
-		if !slices.Contains(applicationStatuses, s) {
-			errs["status"] = "must be one of: " + strings.Join(applicationStatuses, ", ")
+		if !stages.Valid(s) {
+			errs["status"] = "must be one of: " + strings.Join(stages.All, ", ")
 		}
 		params.Status = &s
 	}

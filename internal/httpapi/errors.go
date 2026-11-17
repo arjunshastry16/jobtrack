@@ -25,14 +25,15 @@ type apiError struct {
 
 // Error codes returned by the API.
 const (
-	codeInvalidJSON      = "invalid_json"
-	codeBodyTooLarge     = "body_too_large"
-	codeValidationFailed = "validation_failed"
-	codeInvalidID        = "invalid_id"
-	codeInvalidQuery     = "invalid_query"
-	codeNotFound         = "not_found"
-	codeConflict         = "conflict"
-	codeInternal         = "internal"
+	codeInvalidJSON       = "invalid_json"
+	codeBodyTooLarge      = "body_too_large"
+	codeValidationFailed  = "validation_failed"
+	codeInvalidID         = "invalid_id"
+	codeInvalidQuery      = "invalid_query"
+	codeNotFound          = "not_found"
+	codeConflict          = "conflict"
+	codeInvalidTransition = "invalid_transition"
+	codeInternal          = "internal"
 )
 
 // Postgres SQLSTATE codes the API maps to client errors.

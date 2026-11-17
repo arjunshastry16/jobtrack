@@ -23,6 +23,16 @@ type Application struct {
 	UpdatedAt      time.Time
 }
 
+type ApplicationEvent struct {
+	ID            int64
+	ApplicationID int64
+	FromStatus    *string
+	ToStatus      string
+	Note          *string
+	OccurredAt    time.Time
+	CreatedAt     time.Time
+}
+
 type Company struct {
 	ID        int64
 	Name      string

@@ -54,7 +54,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	defer pool.Close()
 
 	srv := &http.Server{
-		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Store: store.New(pool), Logger: logger}),
+		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Store: store.NewStore(pool), Logger: logger}),
 		// Timeouts stop slow or stuck clients from holding connections open forever.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

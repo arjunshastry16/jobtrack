@@ -22,7 +22,7 @@ func newDBRouter(t *testing.T) http.Handler {
 	return NewRouter(Deps{
 		Version: "test",
 		DB:      pool,
-		Store:   store.New(pool),
+		Store:   store.NewStore(pool),
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 }

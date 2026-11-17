@@ -21,7 +21,7 @@ type Pinger interface {
 type Deps struct {
 	Version string
 	DB      Pinger
-	Store   store.Querier
+	Store   store.DB
 	Logger  *slog.Logger
 	// RequestTimeout bounds each request; zero means defaultRequestTimeout.
 	RequestTimeout time.Duration
@@ -33,7 +33,7 @@ const defaultRequestTimeout = 10 * time.Second
 
 // api holds what the resource handlers share.
 type api struct {
-	store  store.Querier
+	store  store.DB
 	logger *slog.Logger
 }
 
@@ -57,6 +57,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/applications/{id}", a.getApplication)
 	mux.HandleFunc("PUT /api/v1/applications/{id}", a.updateApplication)
 	mux.HandleFunc("DELETE /api/v1/applications/{id}", a.deleteApplication)
+	mux.HandleFunc("POST /api/v1/applications/{id}/transitions", a.transitionApplication)
+	mux.HandleFunc("GET /api/v1/applications/{id}/timeline", a.applicationTimeline)
 
 	timeout := d.RequestTimeout
 	if timeout == 0 {
