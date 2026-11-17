@@ -1,0 +1,46 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "address": {"postalAddress": {"addressCountry": "India", "addressLocality": "Bengaluru", "addressRegion": "Karnataka"}},
+      "applyUrl": "https://jobs.ashbyhq.com/examplecorp/22222222-aaaa-4bbb-8ccc-000000000001/application",
+      "department": "Engineering",
+      "employmentType": "FullTime",
+      "id": "22222222-aaaa-4bbb-8ccc-000000000001",
+      "isListed": true,
+      "isRemote": false,
+      "jobUrl": "https://jobs.ashbyhq.com/examplecorp/22222222-aaaa-4bbb-8ccc-000000000001",
+      "location": "Bengaluru",
+      "publishedAt": "2026-04-17T11:46:39.214+00:00",
+      "secondaryLocations": [{"location": "Hyderabad"}, {"location": "bengaluru"}],
+      "team": "Infrastructure",
+      "title": "Platform Engineer",
+      "workplaceType": "OnSite"
+    },
+    {
+      "address": {"postalAddress": {"addressCountry": "United States"}},
+      "id": "22222222-aaaa-4bbb-8ccc-000000000002",
+      "isListed": true,
+      "isRemote": true,
+      "jobUrl": "https://jobs.ashbyhq.com/examplecorp/22222222-aaaa-4bbb-8ccc-000000000002",
+      "location": "Remote - US",
+      "publishedAt": "2026-10-01T09:00:00Z",
+      "secondaryLocations": [],
+      "title": "Developer Advocate"
+    },
+    {
+      "id": "22222222-aaaa-4bbb-8ccc-000000000003",
+      "isListed": false,
+      "jobUrl": "https://jobs.ashbyhq.com/examplecorp/22222222-aaaa-4bbb-8ccc-000000000003",
+      "location": "Bengaluru",
+      "title": "Internal Transfer Only"
+    },
+    {
+      "id": "22222222-aaaa-4bbb-8ccc-000000000004",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/examplecorp/22222222-aaaa-4bbb-8ccc-000000000004",
+      "location": "Pune",
+      "title": "   "
+    }
+  ]
+}

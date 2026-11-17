@@ -868,7 +868,7 @@ components:
     Board:
       type: string
       description: Job-board type (applicant tracking system)
-      enum: [greenhouse]
+      enum: [greenhouse, lever, ashby]
 
     Watch:
       type: object

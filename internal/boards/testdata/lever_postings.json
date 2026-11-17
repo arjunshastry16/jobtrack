@@ -1,0 +1,50 @@
+[
+  {
+    "applyUrl": "https://jobs.lever.co/examplecorp/11111111-aaaa-4bbb-8ccc-000000000001/apply",
+    "categories": {
+      "allLocations": ["Bangalore, Karnataka", "Hyderabad, Telangana"],
+      "commitment": "Full Time Employee",
+      "department": "Engineering",
+      "location": "Bangalore, Karnataka",
+      "team": "Platform"
+    },
+    "country": "IN",
+    "createdAt": 1757916149833,
+    "hostedUrl": "https://jobs.lever.co/examplecorp/11111111-aaaa-4bbb-8ccc-000000000001",
+    "id": "11111111-aaaa-4bbb-8ccc-000000000001",
+    "text": "Backend Engineer - Payments",
+    "workplaceType": "onsite"
+  },
+  {
+    "categories": {"allLocations": ["Remote"], "location": "Remote"},
+    "country": "US",
+    "createdAt": 1760000000000,
+    "hostedUrl": "https://jobs.lever.co/examplecorp/11111111-aaaa-4bbb-8ccc-000000000002",
+    "id": "11111111-aaaa-4bbb-8ccc-000000000002",
+    "text": " Site Reliability Engineer ",
+    "workplaceType": "remote"
+  },
+  {
+    "categories": {"location": "Pune"},
+    "country": "",
+    "createdAt": 0,
+    "hostedUrl": "https://jobs.lever.co/examplecorp/11111111-aaaa-4bbb-8ccc-000000000003",
+    "id": "11111111-aaaa-4bbb-8ccc-000000000003",
+    "text": "Data Engineer"
+  },
+  {
+    "categories": {"location": "Mumbai"},
+    "country": "IN",
+    "hostedUrl": "https://jobs.lever.co/examplecorp/missing-title",
+    "id": "11111111-aaaa-4bbb-8ccc-000000000004",
+    "text": ""
+  },
+  {
+    "categories": {"location": "Delhi"},
+    "country": "IN",
+    "createdAt": 1761000000000,
+    "hostedUrl": "https://jobs.lever.co/examplecorp/11111111-aaaa-4bbb-8ccc-000000000005",
+    "id": "11111111-aaaa-4bbb-8ccc-000000000005",
+    "text": "Product Manager"
+  }
+]

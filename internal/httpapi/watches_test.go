@@ -26,6 +26,8 @@ func TestWatchInputNormalize(t *testing.T) {
 		},
 		{name: "no keywords means all", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x"}, wantKeywords: []string{}, wantEnabled: true},
 		{name: "disabled", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Enabled: &no}, wantKeywords: []string{}, wantEnabled: false},
+		{name: "lever", in: watchInput{CompanyID: 1, Board: "Lever", BoardToken: "meesho"}, wantKeywords: []string{}, wantEnabled: true},
+		{name: "ashby", in: watchInput{CompanyID: 1, Board: "ashby", BoardToken: "sarvam"}, wantKeywords: []string{}, wantEnabled: true},
 		{name: "missing everything", in: watchInput{}, wantErrs: []string{"company_id", "board", "board_token"}},
 		{name: "unsupported board", in: watchInput{CompanyID: 1, Board: "workday", BoardToken: "x"}, wantErrs: []string{"board"}},
 		{name: "token with slash", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "a/b"}, wantErrs: []string{"board_token"}},
