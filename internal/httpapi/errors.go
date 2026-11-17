@@ -52,6 +52,15 @@ func pgCode(err error) string {
 	return ""
 }
 
+// pgConstraint returns the name of the constraint a Postgres error is about, or "".
+func pgConstraint(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.ConstraintName
+	}
+	return ""
+}
+
 // writeQueryError reports invalid query-string parameters (400).
 func writeQueryError(w http.ResponseWriter, fields map[string]string) {
 	writeJSON(w, http.StatusBadRequest, errorResponse{Error: apiError{

@@ -23,6 +23,11 @@ type Application struct {
 	UpdatedAt      time.Time
 }
 
+type ApplicationContact struct {
+	ApplicationID int64
+	ContactID     int64
+}
+
 type ApplicationEvent struct {
 	ID            int64
 	ApplicationID int64
@@ -39,4 +44,23 @@ type Company struct {
 	Website   *string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type Contact struct {
+	ID          int64
+	CompanyID   int64
+	Name        string
+	Title       *string
+	Email       *string
+	LinkedinUrl *string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type Note struct {
+	ID            int64
+	ApplicationID int64
+	Body          string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }

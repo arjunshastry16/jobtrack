@@ -83,9 +83,14 @@ func isWebURL(s string) bool {
 
 // pathID parses the {id} path segment. It writes a 400 and returns false if it isn't a positive integer.
 func pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	return pathInt(w, r, "id")
+}
+
+// pathInt parses the named path segment as a positive integer, writing a 400 if it isn't one.
+func pathInt(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, codeInvalidID, "id must be a positive integer")
+		writeError(w, http.StatusBadRequest, codeInvalidID, name+" must be a positive integer")
 		return 0, false
 	}
 	return id, true
@@ -168,9 +173,9 @@ func (a *api) deleteCompany(w http.ResponseWriter, r *http.Request) {
 	}
 	n, err := a.store.DeleteCompany(r.Context(), id)
 	if code := pgCode(err); code == pgRestrictViolation || code == pgForeignKeyViolation {
-		// applications.company_id is ON DELETE RESTRICT (SQLSTATE 23001): never silently
-		// delete someone's applications. 23503 is also accepted in case the FK is ever NO ACTION.
-		writeError(w, http.StatusConflict, codeConflict, "company still has applications; delete or move them first")
+		// applications/contacts.company_id are ON DELETE RESTRICT (SQLSTATE 23001): never silently
+		// delete someone's data. 23503 is also accepted in case an FK is ever NO ACTION.
+		writeError(w, http.StatusConflict, codeConflict, "company still has applications or contacts; delete or move them first")
 		return
 	}
 	if err != nil {

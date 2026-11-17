@@ -60,6 +60,20 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/applications/{id}/transitions", a.transitionApplication)
 	mux.HandleFunc("GET /api/v1/applications/{id}/timeline", a.applicationTimeline)
 
+	mux.HandleFunc("POST /api/v1/contacts", a.createContact)
+	mux.HandleFunc("GET /api/v1/contacts", a.listContacts)
+	mux.HandleFunc("GET /api/v1/contacts/{id}", a.getContact)
+	mux.HandleFunc("PUT /api/v1/contacts/{id}", a.updateContact)
+	mux.HandleFunc("DELETE /api/v1/contacts/{id}", a.deleteContact)
+	mux.HandleFunc("GET /api/v1/applications/{id}/contacts", a.listApplicationContacts)
+	mux.HandleFunc("PUT /api/v1/applications/{id}/contacts/{contact_id}", a.linkContact)
+	mux.HandleFunc("DELETE /api/v1/applications/{id}/contacts/{contact_id}", a.unlinkContact)
+
+	mux.HandleFunc("POST /api/v1/applications/{id}/notes", a.createNote)
+	mux.HandleFunc("GET /api/v1/applications/{id}/notes", a.listNotes)
+	mux.HandleFunc("PUT /api/v1/notes/{id}", a.updateNote)
+	mux.HandleFunc("DELETE /api/v1/notes/{id}", a.deleteNote)
+
 	timeout := d.RequestTimeout
 	if timeout == 0 {
 		timeout = defaultRequestTimeout

@@ -10,14 +10,24 @@ import (
 )
 
 type Querier interface {
+	ApplicationExists(ctx context.Context, id int64) (bool, error)
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (int64, error)
 	CreateApplicationEvent(ctx context.Context, arg CreateApplicationEventParams) (ApplicationEvent, error)
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
+	CreateContact(ctx context.Context, arg CreateContactParams) (Contact, error)
+	CreateNote(ctx context.Context, arg CreateNoteParams) (Note, error)
 	DeleteApplication(ctx context.Context, id int64) (int64, error)
 	DeleteCompany(ctx context.Context, id int64) (int64, error)
+	DeleteContact(ctx context.Context, id int64) (int64, error)
+	DeleteNote(ctx context.Context, id int64) (int64, error)
 	GetApplication(ctx context.Context, id int64) (GetApplicationRow, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
+	GetContact(ctx context.Context, id int64) (Contact, error)
 	LatestApplicationEventTime(ctx context.Context, applicationID int64) (time.Time, error)
+	// LinkContact is idempotent: linking an already-linked pair changes nothing.
+	//
+	LinkContact(ctx context.Context, arg LinkContactParams) error
+	ListApplicationContacts(ctx context.Context, applicationID int64) ([]Contact, error)
 	ListApplicationEvents(ctx context.Context, applicationID int64) ([]ApplicationEvent, error)
 	// ListApplications returns one page, newest first. Filters are optional (NULL = no
 	// filter). before_id is the keyset-pagination cursor: only rows older than the last
@@ -25,16 +35,21 @@ type Querier interface {
 	//
 	ListApplications(ctx context.Context, arg ListApplicationsParams) ([]ListApplicationsRow, error)
 	ListCompanies(ctx context.Context, limit int32) ([]Company, error)
+	ListContacts(ctx context.Context, arg ListContactsParams) ([]Contact, error)
+	ListNotes(ctx context.Context, applicationID int64) ([]Note, error)
 	// LockApplicationStatus reads an application's status and locks its row until the
 	// transaction ends, so two concurrent stage changes can't both start from the same status.
 	//
 	LockApplicationStatus(ctx context.Context, id int64) (string, error)
 	SetApplicationStatus(ctx context.Context, arg SetApplicationStatusParams) error
+	UnlinkContact(ctx context.Context, arg UnlinkContactParams) (int64, error)
 	// Status is deliberately not updatable here: stage changes will go through a
 	// dedicated transition endpoint that also records the history.
 	//
 	UpdateApplication(ctx context.Context, arg UpdateApplicationParams) (int64, error)
 	UpdateCompany(ctx context.Context, arg UpdateCompanyParams) (Company, error)
+	UpdateContact(ctx context.Context, arg UpdateContactParams) (Contact, error)
+	UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, error)
 }
 
 var _ Querier = (*Queries)(nil)
