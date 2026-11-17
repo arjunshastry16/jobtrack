@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -116,6 +117,56 @@ func (q *Queue) Claim(ctx context.Context, n int, lease time.Duration) ([]Job, e
 			j.LeaseEnds = *r.LockedUntil
 		}
 		out = append(out, j)
+	}
+	return out, nil
+}
+
+// maxErrorLen caps the stored error message so one huge error can't bloat the table.
+const maxErrorLen = 2000
+
+// Fail records a failed attempt. The job is retried after retryIn, unless it has used
+// all its attempts or giveUp is set, in which case it becomes dead. dead reports which
+// happened. Returns ErrLeaseLost if the job is no longer this worker's.
+func (q *Queue) Fail(ctx context.Context, j Job, cause error, retryIn time.Duration, giveUp bool) (dead bool, err error) {
+	msg := "unknown error"
+	if cause != nil {
+		msg = cause.Error()
+	}
+	if len(msg) > maxErrorLen {
+		// Cutting at a byte offset can split a multi-byte character, and Postgres rejects
+		// invalid UTF-8; ToValidUTF8 drops any partial character left at the end.
+		msg = strings.ToValidUTF8(msg[:maxErrorLen], "") + "…"
+	}
+	row, err := q.q.FailJob(ctx, store.FailJobParams{
+		ID: j.ID, Attempts: j.Attempt, LastError: msg, GiveUp: giveUp, RetryInSeconds: retryIn.Seconds(),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrLeaseLost
+	}
+	if err != nil {
+		return false, fmt.Errorf("jobs: fail %d: %w", j.ID, err)
+	}
+	return row.State == "dead", nil
+}
+
+// Requeued describes a job the reaper took back from an expired lease.
+type Requeued struct {
+	ID       int64
+	Kind     string
+	Attempts int32
+	Dead     bool // true if that was its last attempt
+}
+
+// RequeueExpired returns running jobs whose lease has passed to the queue (or to dead,
+// if they have no attempts left). Workers call it periodically.
+func (q *Queue) RequeueExpired(ctx context.Context) ([]Requeued, error) {
+	rows, err := q.q.RequeueExpiredJobs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("jobs: requeue expired: %w", err)
+	}
+	out := make([]Requeued, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Requeued{ID: r.ID, Kind: r.Kind, Attempts: r.Attempts, Dead: r.State == "dead"})
 	}
 	return out, nil
 }

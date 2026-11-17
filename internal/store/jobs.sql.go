@@ -123,6 +123,56 @@ func (q *Queries) EnqueueJob(ctx context.Context, arg EnqueueJobParams) (int64, 
 	return id, err
 }
 
+const failJob = `-- name: FailJob :one
+UPDATE jobs
+SET state = CASE
+        WHEN $1::boolean OR attempts >= max_attempts THEN 'dead'
+        ELSE 'pending'
+    END,
+    run_at = CASE
+        WHEN $1::boolean OR attempts >= max_attempts THEN run_at
+        ELSE now() + make_interval(secs => $2::double precision)
+    END,
+    finished_at = CASE
+        WHEN $1::boolean OR attempts >= max_attempts THEN now()
+    END,
+    last_error   = $3::text,
+    locked_until = NULL,
+    updated_at   = now()
+WHERE id = $4 AND state = 'running' AND attempts = $5
+RETURNING state, run_at
+`
+
+type FailJobParams struct {
+	GiveUp         bool
+	RetryInSeconds float64
+	LastError      string
+	ID             int64
+	Attempts       int32
+}
+
+type FailJobRow struct {
+	State string
+	RunAt time.Time
+}
+
+// FailJob records a failed attempt. The job is retried at now() + retry_in_seconds,
+// unless it has used all its attempts or give_up is set (a permanent error), in which
+// case it goes to the 'dead' state (the dead-letter queue) with its last error kept for
+// inspection. Fenced by the attempt number like CompleteJob; no row = lease lost.
+func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) (FailJobRow, error) {
+	row := q.db.QueryRow(ctx, failJob,
+		arg.GiveUp,
+		arg.RetryInSeconds,
+		arg.LastError,
+		arg.ID,
+		arg.Attempts,
+	)
+	var i FailJobRow
+	err := row.Scan(&i.State, &i.RunAt)
+	return i, err
+}
+
 const getJob = `-- name: GetJob :one
 SELECT id, kind, payload, state, run_at, attempts, max_attempts, locked_until, last_error, dedupe_key, created_at, updated_at, finished_at FROM jobs
 WHERE id = $1
@@ -147,4 +197,51 @@ func (q *Queries) GetJob(ctx context.Context, id int64) (Job, error) {
 		&i.FinishedAt,
 	)
 	return i, err
+}
+
+const requeueExpiredJobs = `-- name: RequeueExpiredJobs :many
+UPDATE jobs
+SET state       = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'pending' END,
+    finished_at = CASE WHEN attempts >= max_attempts THEN now() END,
+    run_at       = now(),
+    last_error   = 'lease expired: worker crashed, was stopped, or took too long',
+    locked_until = NULL,
+    updated_at   = now()
+WHERE state = 'running' AND locked_until < now()
+RETURNING id, kind, state, attempts
+`
+
+type RequeueExpiredJobsRow struct {
+	ID       int64
+	Kind     string
+	State    string
+	Attempts int32
+}
+
+// RequeueExpiredJobs is the reaper: running jobs whose lease has passed (the worker
+// crashed, was killed, or hung) go back to pending, or to dead if that was their last
+// attempt. This is what makes delivery at-least-once.
+func (q *Queries) RequeueExpiredJobs(ctx context.Context) ([]RequeueExpiredJobsRow, error) {
+	rows, err := q.db.Query(ctx, requeueExpiredJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RequeueExpiredJobsRow
+	for rows.Next() {
+		var i RequeueExpiredJobsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.State,
+			&i.Attempts,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

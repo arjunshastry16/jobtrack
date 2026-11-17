@@ -37,6 +37,12 @@ type Querier interface {
 	// dedupe_key already exists.
 	//
 	EnqueueJob(ctx context.Context, arg EnqueueJobParams) (int64, error)
+	// FailJob records a failed attempt. The job is retried at now() + retry_in_seconds,
+	// unless it has used all its attempts or give_up is set (a permanent error), in which
+	// case it goes to the 'dead' state (the dead-letter queue) with its last error kept for
+	// inspection. Fenced by the attempt number like CompleteJob; no row = lease lost.
+	//
+	FailJob(ctx context.Context, arg FailJobParams) (FailJobRow, error)
 	GetApplication(ctx context.Context, id int64) (GetApplicationRow, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	GetContact(ctx context.Context, id int64) (Contact, error)
@@ -59,6 +65,11 @@ type Querier interface {
 	// transaction ends, so two concurrent stage changes can't both start from the same status.
 	//
 	LockApplicationStatus(ctx context.Context, id int64) (string, error)
+	// RequeueExpiredJobs is the reaper: running jobs whose lease has passed (the worker
+	// crashed, was killed, or hung) go back to pending, or to dead if that was their last
+	// attempt. This is what makes delivery at-least-once.
+	//
+	RequeueExpiredJobs(ctx context.Context) ([]RequeueExpiredJobsRow, error)
 	SetApplicationStatus(ctx context.Context, arg SetApplicationStatusParams) error
 	UnlinkContact(ctx context.Context, arg UnlinkContactParams) (int64, error)
 	// Status is deliberately not updatable here: stage changes will go through a
