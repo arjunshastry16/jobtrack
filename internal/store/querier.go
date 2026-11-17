@@ -61,6 +61,11 @@ type Querier interface {
 	ListCompanies(ctx context.Context, limit int32) ([]Company, error)
 	ListContacts(ctx context.Context, arg ListContactsParams) ([]Contact, error)
 	ListNotes(ctx context.Context, applicationID int64) ([]Note, error)
+	// ListStaleApplications finds open applications whose most recent stage change is older
+	// than cutoff: the ones where it's time to follow up. wishlist (not applied yet) and
+	// final statuses are excluded. Oldest first.
+	//
+	ListStaleApplications(ctx context.Context, arg ListStaleApplicationsParams) ([]ListStaleApplicationsRow, error)
 	// LockApplicationStatus reads an application's status and locks its row until the
 	// transaction ends, so two concurrent stage changes can't both start from the same status.
 	//

@@ -11,13 +11,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/arjunshastry16/jobtrack/internal/config"
 	"github.com/arjunshastry16/jobtrack/internal/db"
 	"github.com/arjunshastry16/jobtrack/internal/httpapi"
+	"github.com/arjunshastry16/jobtrack/internal/jobs"
+	"github.com/arjunshastry16/jobtrack/internal/notify"
+	"github.com/arjunshastry16/jobtrack/internal/reminders"
 	"github.com/arjunshastry16/jobtrack/internal/requestid"
+	"github.com/arjunshastry16/jobtrack/internal/scheduler"
 	"github.com/arjunshastry16/jobtrack/internal/store"
 )
 
@@ -50,11 +55,39 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if err != nil {
 		return err
 	}
-	// Runs when run returns, after the HTTP server has stopped using the pool.
+	// Runs when run returns, after the HTTP server and background work have stopped using
+	// the pool (deferred calls run last-in, first-out).
 	defer pool.Close()
+	st := store.NewStore(pool)
+
+	notifier, err := newNotifier(cfg, logger)
+	if err != nil {
+		return err
+	}
+
+	// Background work: a job worker, plus a scheduler that enqueues jobs.
+	queue := jobs.New(st)
+	worker := jobs.NewWorker(queue, logger, jobs.Config{})
+	rem := reminders.NewService(st, queue, notifier, logger, reminders.Config{
+		AfterDays: cfg.ReminderAfterDays, StartHour: cfg.ReminderStartHour, EndHour: cfg.ReminderEndHour,
+	})
+	rem.Register(worker)
+	sched := scheduler.New(logger, rem.ScanTask(time.Hour))
+
+	// bgCtx is cancelled by shutdown (it derives from ctx) or, on an early error return,
+	// by the deferred stopBackground. Either way we wait for the worker to drain before
+	// the pool is closed.
+	bgCtx, stopBackground := context.WithCancel(ctx)
+	var background sync.WaitGroup
+	defer func() {
+		stopBackground()
+		background.Wait()
+	}()
+	background.Go(func() { worker.Run(bgCtx) })
+	background.Go(func() { sched.Run(bgCtx) })
 
 	srv := &http.Server{
-		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Store: store.NewStore(pool), Logger: logger}),
+		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Store: st, Logger: logger}),
 		// Timeouts stop slow or stuck clients from holding connections open forever.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -93,6 +126,22 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("http server: %w", err)
 	}
+	// The worker started draining when ctx was cancelled, alongside the HTTP shutdown.
+	stopBackground()
+	background.Wait()
 	logger.Info("stopped cleanly")
 	return nil
+}
+
+// newNotifier returns the ntfy notifier, or one that only logs if no topic is configured.
+func newNotifier(cfg config.Config, logger *slog.Logger) (notify.Notifier, error) {
+	if cfg.NtfyURL == "" {
+		logger.Warn("JOBTRACK_NTFY_URL not set; reminders will only be logged")
+		return notify.Log{Logger: logger}, nil
+	}
+	n, err := notify.NewNtfy(cfg.NtfyURL, cfg.NtfyToken, nil)
+	if err != nil {
+		return nil, fmt.Errorf("JOBTRACK_NTFY_URL: %w", err)
+	}
+	return n, nil
 }
