@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/arjunshastry16/jobtrack/docs"
 	"github.com/arjunshastry16/jobtrack/internal/store"
 )
 
@@ -37,42 +38,58 @@ type api struct {
 	logger *slog.Logger
 }
 
+// route is one endpoint. Patterns use Go 1.22+ ServeMux syntax, which for our paths is
+// the same as OpenAPI's ({id}); a test checks this table against docs/openapi.yaml.
+type route struct {
+	method, pattern string
+	handler         http.HandlerFunc
+}
+
+func routes(a *api, d Deps) []route {
+	return []route{
+		{"GET", "/healthz", handleHealthz(d.Version)},
+		{"GET", "/readyz", handleReadyz(d.DB, d.Logger)},
+		{"GET", "/api/v1/openapi.yaml", handleOpenAPISpec},
+
+		{"POST", "/api/v1/companies", a.createCompany},
+		{"GET", "/api/v1/companies", a.listCompanies},
+		{"GET", "/api/v1/companies/{id}", a.getCompany},
+		{"PUT", "/api/v1/companies/{id}", a.updateCompany},
+		{"DELETE", "/api/v1/companies/{id}", a.deleteCompany},
+
+		{"POST", "/api/v1/applications", a.createApplication},
+		{"GET", "/api/v1/applications", a.listApplications},
+		{"GET", "/api/v1/applications/{id}", a.getApplication},
+		{"PUT", "/api/v1/applications/{id}", a.updateApplication},
+		{"DELETE", "/api/v1/applications/{id}", a.deleteApplication},
+		{"POST", "/api/v1/applications/{id}/transitions", a.transitionApplication},
+		{"GET", "/api/v1/applications/{id}/timeline", a.applicationTimeline},
+
+		{"POST", "/api/v1/contacts", a.createContact},
+		{"GET", "/api/v1/contacts", a.listContacts},
+		{"GET", "/api/v1/contacts/{id}", a.getContact},
+		{"PUT", "/api/v1/contacts/{id}", a.updateContact},
+		{"DELETE", "/api/v1/contacts/{id}", a.deleteContact},
+		{"GET", "/api/v1/applications/{id}/contacts", a.listApplicationContacts},
+		{"PUT", "/api/v1/applications/{id}/contacts/{contact_id}", a.linkContact},
+		{"DELETE", "/api/v1/applications/{id}/contacts/{contact_id}", a.unlinkContact},
+
+		{"POST", "/api/v1/applications/{id}/notes", a.createNote},
+		{"GET", "/api/v1/applications/{id}/notes", a.listNotes},
+		{"PUT", "/api/v1/notes/{id}", a.updateNote},
+		{"DELETE", "/api/v1/notes/{id}", a.deleteNote},
+	}
+}
+
 // NewRouter returns the service's HTTP handler.
 func NewRouter(d Deps) http.Handler {
 	a := &api{store: d.Store, logger: d.Logger}
 
 	mux := http.NewServeMux()
 	// Go 1.22+ patterns: the method is part of the route, so e.g. POST /healthz gets a 405 for free.
-	mux.HandleFunc("GET /healthz", handleHealthz(d.Version))
-	mux.HandleFunc("GET /readyz", handleReadyz(d.DB, d.Logger))
-
-	mux.HandleFunc("POST /api/v1/companies", a.createCompany)
-	mux.HandleFunc("GET /api/v1/companies", a.listCompanies)
-	mux.HandleFunc("GET /api/v1/companies/{id}", a.getCompany)
-	mux.HandleFunc("PUT /api/v1/companies/{id}", a.updateCompany)
-	mux.HandleFunc("DELETE /api/v1/companies/{id}", a.deleteCompany)
-
-	mux.HandleFunc("POST /api/v1/applications", a.createApplication)
-	mux.HandleFunc("GET /api/v1/applications", a.listApplications)
-	mux.HandleFunc("GET /api/v1/applications/{id}", a.getApplication)
-	mux.HandleFunc("PUT /api/v1/applications/{id}", a.updateApplication)
-	mux.HandleFunc("DELETE /api/v1/applications/{id}", a.deleteApplication)
-	mux.HandleFunc("POST /api/v1/applications/{id}/transitions", a.transitionApplication)
-	mux.HandleFunc("GET /api/v1/applications/{id}/timeline", a.applicationTimeline)
-
-	mux.HandleFunc("POST /api/v1/contacts", a.createContact)
-	mux.HandleFunc("GET /api/v1/contacts", a.listContacts)
-	mux.HandleFunc("GET /api/v1/contacts/{id}", a.getContact)
-	mux.HandleFunc("PUT /api/v1/contacts/{id}", a.updateContact)
-	mux.HandleFunc("DELETE /api/v1/contacts/{id}", a.deleteContact)
-	mux.HandleFunc("GET /api/v1/applications/{id}/contacts", a.listApplicationContacts)
-	mux.HandleFunc("PUT /api/v1/applications/{id}/contacts/{contact_id}", a.linkContact)
-	mux.HandleFunc("DELETE /api/v1/applications/{id}/contacts/{contact_id}", a.unlinkContact)
-
-	mux.HandleFunc("POST /api/v1/applications/{id}/notes", a.createNote)
-	mux.HandleFunc("GET /api/v1/applications/{id}/notes", a.listNotes)
-	mux.HandleFunc("PUT /api/v1/notes/{id}", a.updateNote)
-	mux.HandleFunc("DELETE /api/v1/notes/{id}", a.deleteNote)
+	for _, rt := range routes(a, d) {
+		mux.HandleFunc(rt.method+" "+rt.pattern, rt.handler)
+	}
 
 	timeout := d.RequestTimeout
 	if timeout == 0 {
@@ -83,6 +100,12 @@ func NewRouter(d Deps) http.Handler {
 		withTimeout(timeout,
 			accessLog(d.Logger,
 				recoverPanics(d.Logger, mux))))
+}
+
+// handleOpenAPISpec serves the API description (also used to generate the frontend client).
+func handleOpenAPISpec(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	_, _ = w.Write(docs.OpenAPI)
 }
 
 // handleHealthz reports that the process is up and serving HTTP (liveness).

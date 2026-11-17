@@ -16,15 +16,16 @@ import (
 )
 
 // newDBRouter returns a router backed by a fresh, migrated database for this test.
+// Every response it produces is also checked against docs/openapi.yaml.
 func newDBRouter(t *testing.T) http.Handler {
 	t.Helper()
 	pool := testdb.New(t)
-	return NewRouter(Deps{
+	return contractChecked(t, NewRouter(Deps{
 		Version: "test",
 		DB:      pool,
 		Store:   store.NewStore(pool),
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
+	}))
 }
 
 // call sends a JSON request and decodes a JSON response into out (if non-nil).
