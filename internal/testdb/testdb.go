@@ -52,6 +52,12 @@ func New(t *testing.T) *pgxpool.Pool {
 		_ = admin.Close(ctx)
 		t.Fatalf("create test database: %v", err)
 	}
+	// Throwaway database: don't wait for each commit to reach the disk. On the Pi's USB
+	// HDD that wait is ~25ms per commit and dominated test time. Never do this for real data.
+	if _, err := admin.Exec(ctx, "ALTER DATABASE "+ident+" SET synchronous_commit = off"); err != nil {
+		_ = admin.Close(ctx)
+		t.Fatalf("configure test database: %v", err)
+	}
 
 	cfg, err := pgxpool.ParseConfig(adminURL)
 	if err != nil {

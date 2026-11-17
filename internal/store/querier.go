@@ -11,6 +11,19 @@ import (
 
 type Querier interface {
 	ApplicationExists(ctx context.Context, id int64) (bool, error)
+	// ClaimJobs atomically takes up to max_jobs due jobs for one worker.
+	//
+	// FOR UPDATE locks the chosen rows; SKIP LOCKED makes other workers pass over rows
+	// that are already locked instead of waiting for them. So concurrent workers each get
+	// a disjoint batch, and nobody blocks. The lease (locked_until) is computed with the
+	// database clock so workers' clocks don't matter.
+	//
+	ClaimJobs(ctx context.Context, arg ClaimJobsParams) ([]Job, error)
+	// CompleteJob marks a running job done. The attempts check is a fencing token: if this
+	// worker's lease expired and another worker re-claimed the job (bumping attempts), the
+	// stale worker's completion matches no row and is ignored.
+	//
+	CompleteJob(ctx context.Context, arg CompleteJobParams) (int64, error)
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (int64, error)
 	CreateApplicationEvent(ctx context.Context, arg CreateApplicationEventParams) (ApplicationEvent, error)
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
@@ -20,9 +33,14 @@ type Querier interface {
 	DeleteCompany(ctx context.Context, id int64) (int64, error)
 	DeleteContact(ctx context.Context, id int64) (int64, error)
 	DeleteNote(ctx context.Context, id int64) (int64, error)
+	// EnqueueJob returns no row (pgx.ErrNoRows) when a job with the same kind and
+	// dedupe_key already exists.
+	//
+	EnqueueJob(ctx context.Context, arg EnqueueJobParams) (int64, error)
 	GetApplication(ctx context.Context, id int64) (GetApplicationRow, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	GetContact(ctx context.Context, id int64) (Contact, error)
+	GetJob(ctx context.Context, id int64) (Job, error)
 	LatestApplicationEventTime(ctx context.Context, applicationID int64) (time.Time, error)
 	// LinkContact is idempotent: linking an already-linked pair changes nothing.
 	//

@@ -57,6 +57,22 @@ type Contact struct {
 	UpdatedAt   time.Time
 }
 
+type Job struct {
+	ID          int64
+	Kind        string
+	Payload     []byte
+	State       string
+	RunAt       time.Time
+	Attempts    int32
+	MaxAttempts int32
+	LockedUntil *time.Time
+	LastError   *string
+	DedupeKey   *string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	FinishedAt  *time.Time
+}
+
 type Note struct {
 	ID            int64
 	ApplicationID int64
