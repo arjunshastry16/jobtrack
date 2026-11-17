@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/arjunshastry16/jobtrack/internal/boards"
 )
 
 func TestWatchInputNormalize(t *testing.T) {
@@ -28,6 +30,7 @@ func TestWatchInputNormalize(t *testing.T) {
 		{name: "disabled", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Enabled: &no}, wantKeywords: []string{}, wantEnabled: false},
 		{name: "lever", in: watchInput{CompanyID: 1, Board: "Lever", BoardToken: "meesho"}, wantKeywords: []string{}, wantEnabled: true},
 		{name: "ashby", in: watchInput{CompanyID: 1, Board: "ashby", BoardToken: "sarvam"}, wantKeywords: []string{}, wantEnabled: true},
+		{name: "smartrecruiters", in: watchInput{CompanyID: 1, Board: "SmartRecruiters", BoardToken: "Freshworks"}, wantKeywords: []string{}, wantEnabled: true},
 		{name: "missing everything", in: watchInput{}, wantErrs: []string{"company_id", "board", "board_token"}},
 		{name: "unsupported board", in: watchInput{CompanyID: 1, Board: "workday", BoardToken: "x"}, wantErrs: []string{"board"}},
 		{name: "token with slash", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "a/b"}, wantErrs: []string{"board_token"}},
@@ -109,6 +112,19 @@ func TestWatchesCRUD(t *testing.T) {
 	wantStatus(t, call(t, h, http.MethodPut, watchPath(created.ID), map[string]any{
 		"company_id": co, "board": "greenhouse", "board_token": "stripe",
 	}, nil), http.StatusNotFound)
+}
+
+// Each supported board must be accepted by the database too (its CHECK constraint is
+// separate from the Go list, and the two have to be kept in step).
+func TestEverySupportedBoardCanBeStored(t *testing.T) {
+	t.Parallel()
+	h := newDBRouter(t)
+	co := mustCreateCompany(t, h, "Acme")
+	for _, b := range boards.Supported {
+		wantStatus(t, call(t, h, http.MethodPost, "/api/v1/watches", map[string]any{
+			"company_id": co, "board": b, "board_token": "acme",
+		}, nil), http.StatusCreated)
+	}
 }
 
 func TestDeletingCompanyDeletesItsWatches(t *testing.T) {

@@ -1,0 +1,44 @@
+{
+  "offset": 0,
+  "limit": 100,
+  "totalFound": 5,
+  "content": [
+    {
+      "id": "744000000000001",
+      "uuid": "33333333-aaaa-4bbb-8ccc-000000000001",
+      "name": "Senior Backend Engineer",
+      "refNumber": "P-0001",
+      "releasedDate": "2026-11-17T09:02:50.621Z",
+      "company": {"identifier": "ExampleCorp", "name": "ExampleCorp"},
+      "location": {"city": "Bengaluru", "region": "Karnataka", "country": "in", "remote": false, "hybrid": true,
+                   "fullLocation": "Bengaluru, Karnataka, India"},
+      "visibility": "PUBLIC",
+      "ref": "https://api.smartrecruiters.com/v1/companies/ExampleCorp/postings/744000000000001"
+    },
+    {
+      "id": "744000000000002",
+      "name": "Customer Success Manager",
+      "releasedDate": "2026-11-10T00:00:00Z",
+      "location": {"city": "London", "country": "gb", "remote": false, "fullLocation": "London, , United Kingdom"},
+      "visibility": "PUBLIC"
+    },
+    {
+      "id": "744000000000003",
+      "name": "Developer Advocate",
+      "location": {"city": "", "country": "in", "remote": true, "fullLocation": ""},
+      "visibility": "PUBLIC"
+    },
+    {
+      "id": "744000000000004",
+      "name": "Internal Mobility Role",
+      "location": {"city": "Pune", "country": "in", "fullLocation": "Pune, India"},
+      "visibility": "INTERNAL"
+    },
+    {
+      "id": "744000000000005",
+      "name": "",
+      "location": {"city": "Chennai", "country": "in", "fullLocation": "Chennai, India"},
+      "visibility": "PUBLIC"
+    }
+  ]
+}

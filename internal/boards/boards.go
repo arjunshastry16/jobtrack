@@ -34,7 +34,7 @@ type Board interface {
 }
 
 // Supported lists the board types that have a client, i.e. what a watch may use.
-var Supported = []string{"greenhouse", "lever", "ashby"}
+var Supported = []string{"greenhouse", "lever", "ashby", "smartrecruiters"}
 
 // ErrBoardNotFound means the board has no company with that token (HTTP 404). It is not
 // worth retrying: the watch is misconfigured.

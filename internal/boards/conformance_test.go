@@ -21,6 +21,7 @@ var implementations = []struct {
 	{"greenhouse", func(u string) boards.Board { return boards.NewGreenhouseAt(u, nil) }},
 	{"lever", func(u string) boards.Board { return boards.NewLeverAt(u, nil) }},
 	{"ashby", func(u string) boards.Board { return boards.NewAshbyAt(u, nil) }},
+	{"smartrecruiters", func(u string) boards.Board { return boards.NewSmartRecruitersAt(u, nil) }},
 }
 
 func statusServer(t *testing.T, status int, body string) *httptest.Server {
