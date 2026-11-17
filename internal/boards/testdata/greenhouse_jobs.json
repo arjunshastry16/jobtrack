@@ -1,0 +1,42 @@
+{
+  "jobs": [
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/examplecorp/jobs/8638232002",
+      "application_deadline": null,
+      "company_name": "ExampleCorp",
+      "data_compliance": [{"type": "gdpr", "requires_consent": false, "retention_period": null}],
+      "first_published": "2026-07-22T13:38:40-04:00",
+      "id": 8638232002,
+      "internal_job_id": 6449994002,
+      "language": "en",
+      "location": {"name": "Remote, United States"},
+      "metadata": null,
+      "requisition_id": "6682",
+      "title": "Senior Backend Engineer, Payments",
+      "updated_at": "2026-11-06T15:25:07-05:00"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/examplecorp/jobs/7001",
+      "first_published": "2026-10-01T09:00:00Z",
+      "id": 7001,
+      "location": {"name": "Bengaluru, India"},
+      "title": "  Site Reliability Engineer  ",
+      "updated_at": "2026-10-15T09:00:00Z"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/examplecorp/jobs/7002",
+      "id": 7002,
+      "location": {"name": ""},
+      "title": "Product Designer",
+      "updated_at": "not a date"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/examplecorp/jobs/7003",
+      "id": 7003,
+      "location": {"name": "Remote"},
+      "title": "",
+      "updated_at": "2026-10-15T09:00:00Z"
+    }
+  ],
+  "meta": {"total": 4}
+}

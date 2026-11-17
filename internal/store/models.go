@@ -80,3 +80,16 @@ type Note struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
+
+type Watch struct {
+	ID            int64
+	CompanyID     int64
+	Board         string
+	BoardToken    string
+	Keywords      []string
+	Enabled       bool
+	LastCheckedAt *time.Time
+	LastError     *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}

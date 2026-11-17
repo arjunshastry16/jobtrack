@@ -29,10 +29,12 @@ type Querier interface {
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateContact(ctx context.Context, arg CreateContactParams) (Contact, error)
 	CreateNote(ctx context.Context, arg CreateNoteParams) (Note, error)
+	CreateWatch(ctx context.Context, arg CreateWatchParams) (Watch, error)
 	DeleteApplication(ctx context.Context, id int64) (int64, error)
 	DeleteCompany(ctx context.Context, id int64) (int64, error)
 	DeleteContact(ctx context.Context, id int64) (int64, error)
 	DeleteNote(ctx context.Context, id int64) (int64, error)
+	DeleteWatch(ctx context.Context, id int64) (int64, error)
 	// EnqueueJob returns no row (pgx.ErrNoRows) when a job with the same kind and
 	// dedupe_key already exists.
 	//
@@ -47,6 +49,7 @@ type Querier interface {
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	GetContact(ctx context.Context, id int64) (Contact, error)
 	GetJob(ctx context.Context, id int64) (Job, error)
+	GetWatch(ctx context.Context, id int64) (Watch, error)
 	LatestApplicationEventTime(ctx context.Context, applicationID int64) (time.Time, error)
 	// LinkContact is idempotent: linking an already-linked pair changes nothing.
 	//
@@ -66,6 +69,7 @@ type Querier interface {
 	// final statuses are excluded. Oldest first.
 	//
 	ListStaleApplications(ctx context.Context, arg ListStaleApplicationsParams) ([]ListStaleApplicationsRow, error)
+	ListWatches(ctx context.Context) ([]Watch, error)
 	// LockApplicationStatus reads an application's status and locks its row until the
 	// transaction ends, so two concurrent stage changes can't both start from the same status.
 	//
@@ -84,6 +88,7 @@ type Querier interface {
 	UpdateCompany(ctx context.Context, arg UpdateCompanyParams) (Company, error)
 	UpdateContact(ctx context.Context, arg UpdateContactParams) (Contact, error)
 	UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, error)
+	UpdateWatch(ctx context.Context, arg UpdateWatchParams) (Watch, error)
 }
 
 var _ Querier = (*Queries)(nil)
