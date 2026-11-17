@@ -212,8 +212,10 @@ func TestWithTimeout(t *testing.T) {
 	const d = 50 * time.Millisecond
 	var gotErr error
 	var elapsed time.Duration
+	// The clock starts before the request: the deadline is set by the middleware, before
+	// the handler runs, so timing from inside the handler would read slightly short.
+	start := time.Now()
 	h := withTimeout(d, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		start := time.Now()
 		<-r.Context().Done() // stands in for a slow DB query that honours the context
 		elapsed = time.Since(start)
 		gotErr = r.Context().Err()
