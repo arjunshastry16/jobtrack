@@ -11,6 +11,13 @@ import (
 	"github.com/arjunshastry16/jobtrack/internal/boards"
 )
 
+// Sample URLs for Workday watches (constants, so gosec doesn't take a URL in a "Token"
+// field for a credential).
+const (
+	nvidiaCareersURL = "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite?utm_source=x"
+	notWorkdayURL    = "https://evil.example/External"
+)
+
 func TestWatchInputNormalize(t *testing.T) {
 	no := false
 	tests := []struct {
@@ -19,6 +26,7 @@ func TestWatchInputNormalize(t *testing.T) {
 		wantErrs     []string
 		wantKeywords []string
 		wantEnabled  bool
+		wantStored   string // the board_token stored, checked when set
 	}{
 		{
 			name:         "cleans keywords, defaults enabled",
@@ -32,7 +40,14 @@ func TestWatchInputNormalize(t *testing.T) {
 		{name: "ashby", in: watchInput{CompanyID: 1, Board: "ashby", BoardToken: "sarvam"}, wantKeywords: []string{}, wantEnabled: true},
 		{name: "smartrecruiters", in: watchInput{CompanyID: 1, Board: "SmartRecruiters", BoardToken: "Freshworks"}, wantKeywords: []string{}, wantEnabled: true},
 		{name: "missing everything", in: watchInput{}, wantErrs: []string{"company_id", "board", "board_token"}},
-		{name: "unsupported board", in: watchInput{CompanyID: 1, Board: "workday", BoardToken: "x"}, wantErrs: []string{"board"}},
+		{
+			name:         "workday URL is stored in canonical form",
+			in:           watchInput{CompanyID: 1, Board: "workday", BoardToken: nvidiaCareersURL},
+			wantKeywords: []string{}, wantEnabled: true, wantStored: "nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite",
+		},
+		{name: "workday needs a careers URL", in: watchInput{CompanyID: 1, Board: "workday", BoardToken: "nvidia"}, wantErrs: []string{"board_token"}},
+		{name: "workday host is pinned", in: watchInput{CompanyID: 1, Board: "workday", BoardToken: notWorkdayURL}, wantErrs: []string{"board_token"}},
+		{name: "unsupported board", in: watchInput{CompanyID: 1, Board: "bamboohr", BoardToken: "x"}, wantErrs: []string{"board"}},
 		{name: "token with slash", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "a/b"}, wantErrs: []string{"board_token"}},
 		{name: "keyword too long", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Keywords: []string{strings.Repeat("k", maxKeywordLen+1)}}, wantErrs: []string{"keywords"}},
 		{name: "too many keywords", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Keywords: manyKeywords(maxKeywords + 1)}, wantErrs: []string{"keywords"}},
@@ -49,6 +64,9 @@ func TestWatchInputNormalize(t *testing.T) {
 			}
 			if !slices.Equal(kw, tt.wantKeywords) || enabled != tt.wantEnabled {
 				t.Errorf("keywords %q enabled %v; want %q %v", kw, enabled, tt.wantKeywords, tt.wantEnabled)
+			}
+			if tt.wantStored != "" && in.BoardToken != tt.wantStored {
+				t.Errorf("board_token = %q, want %q", in.BoardToken, tt.wantStored)
 			}
 		})
 	}
@@ -114,16 +132,31 @@ func TestWatchesCRUD(t *testing.T) {
 	}, nil), http.StatusNotFound)
 }
 
-// Each supported board must be accepted by the database too (its CHECK constraint is
-// separate from the Go list, and the two have to be kept in step).
+// Each supported board must be accepted by the database too (its CHECK constraints are
+// separate from the Go validation, and the two have to be kept in step).
 func TestEverySupportedBoardCanBeStored(t *testing.T) {
 	t.Parallel()
+	// A realistic token per board; for Workday, a URL that exercises every part of the
+	// canonical form (filters, repeated filters, search text with a space).
+	tokens := map[string]string{
+		"greenhouse": "acme", "lever": "acme", "ashby": "acme", "smartrecruiters": "Acme-Corp",
+		"workday": "https://acme.wd103.myworkdayjobs.com/en-US/Acme_Careers-1?q=site%20reliability%26sre" +
+			"&locations=91336993fab910af6d6fb9748af4c1df&locations=f28ae3c49d2601aff203e114d301695f" +
+			"&timeType=5509c0b5959810ac0029943377d47364&utm_source=linkedin",
+	}
 	h := newDBRouter(t)
 	co := mustCreateCompany(t, h, "Acme")
 	for _, b := range boards.Supported {
+		tok, ok := tokens[b]
+		if !ok {
+			t.Errorf("no sample token for board %q", b)
+			continue
+		}
+		var w watchJSON
 		wantStatus(t, call(t, h, http.MethodPost, "/api/v1/watches", map[string]any{
-			"company_id": co, "board": b, "board_token": "acme",
-		}, nil), http.StatusCreated)
+			"company_id": co, "board": b, "board_token": tok,
+		}, &w), http.StatusCreated)
+		t.Logf("%s stored as %q", b, w.BoardToken)
 	}
 }
 

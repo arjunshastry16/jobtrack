@@ -867,8 +867,10 @@ components:
 
     Board:
       type: string
-      description: Job-board type (applicant tracking system)
-      enum: [greenhouse, lever, ashby, smartrecruiters]
+      description: |
+        Job-board type (applicant tracking system). `workday` is unofficial: it reads the JSON
+        that the company's public careers page loads, slowly and only during the nightly sync.
+      enum: [greenhouse, lever, ashby, smartrecruiters, workday]
 
     Watch:
       type: object
@@ -879,7 +881,11 @@ components:
         id: { type: integer, format: int64 }
         company_id: { type: integer, format: int64 }
         board: { $ref: "#/components/schemas/Board" }
-        board_token: { type: string, description: 'The company''s id on the board, e.g. "stripe"' }
+        board_token:
+          type: string
+          description: |
+            The company's id on the board, e.g. "stripe". For Workday, the careers-site URL in
+            canonical form, e.g. "nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite?locationHierarchy1=…"
         keywords:
           type: array
           description: Lower-case; a posting matches if its title contains any. Empty = all postings.
@@ -897,7 +903,13 @@ components:
       properties:
         company_id: { type: integer, format: int64, minimum: 1 }
         board: { $ref: "#/components/schemas/Board" }
-        board_token: { type: string, pattern: '^[A-Za-z0-9._-]{1,100}$' }
+        board_token:
+          type: string
+          maxLength: 2000
+          description: |
+            The company's id on the board (letters, digits, `.` `_` `-`), e.g. "stripe". For
+            Workday, paste the careers-site URL; filter it first (e.g. by country) and those
+            filters are kept.
         keywords:
           type: array
           maxItems: 20

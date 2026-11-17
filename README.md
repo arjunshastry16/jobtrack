@@ -10,8 +10,30 @@ A self-hosted job-search tracker, written in Go and run like a production servic
 
 - Track companies, applications and every stage change (applied → screen → onsite → offer)
 - Follow-up reminders pushed to your phone
-- Watch company job boards (Greenhouse, Lever, Ashby) and collect new matching postings
+- Watch company job boards (Greenhouse, Lever, Ashby, SmartRecruiters, Workday) and collect new matching postings
 - Funnel stats: response rate, interview rate, time in each stage
+
+## Job boards
+
+Postings come from the public JSON APIs that companies' applicant tracking systems publish:
+Greenhouse, Lever, Ashby and SmartRecruiters. A watch names the company's id on the board,
+e.g. `stripe`.
+
+**Workday is unofficial.** It has no public jobs API, so jobtrack reads the JSON that a
+company's public careers page loads in the browser. A Workday watch is set up by pasting the
+careers-page URL, filtered first (e.g. to one country) because those filters are kept. The
+client is deliberately slow and polite:
+
+- one request at a time, 5 s apart
+- it backs off when asked (HTTP 429 / `Retry-After`)
+- it runs only in the nightly sync
+- it refuses unfiltered sites with more than 800 postings
+- nothing tries to get past bot protection
+
+It may stop working whenever Workday changes its site.
+
+Not supported: LinkedIn and Naukri. Their terms forbid scraping, so those applications are
+entered by hand.
 
 ## How it runs (planned)
 
@@ -34,6 +56,7 @@ against it.
 | Stage changes | `POST /applications/{id}/transitions`, `GET /applications/{id}/timeline` |
 | Contacts | `GET/POST /contacts`, `GET/PUT/DELETE /contacts/{id}`, `PUT/DELETE /applications/{id}/contacts/{contact_id}` |
 | Notes | `GET/POST /applications/{id}/notes`, `PUT/DELETE /notes/{id}` |
+| Job-board watches | `GET/POST /watches`, `GET/PUT/DELETE /watches/{id}` |
 | Health | `GET /healthz` (liveness), `GET /readyz` (database reachable) |
 
 ## Development

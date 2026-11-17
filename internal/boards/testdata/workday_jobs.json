@@ -1,0 +1,42 @@
+{
+  "total": 5,
+  "jobPostings": [
+    {
+      "title": "Senior Backend Engineer",
+      "externalPath": "/job/India-Bengaluru/Senior-Backend-Engineer_JR1000001",
+      "locationsText": "India, Bengaluru",
+      "postedOn": "Posted Today",
+      "bulletFields": ["JR1000001"]
+    },
+    {
+      "title": "Site Reliability Engineer",
+      "externalPath": "/job/India-Pune/Site-Reliability-Engineer_JR1000002-1",
+      "locationsText": "2 Locations",
+      "postedOn": "Posted 3 Days Ago",
+      "bulletFields": ["JR1000002"]
+    },
+    {
+      "title": "  ",
+      "externalPath": "/job/India-Pune/Untitled_JR1000003",
+      "locationsText": "India, Pune",
+      "postedOn": "Posted Yesterday",
+      "bulletFields": ["JR1000003"]
+    },
+    {
+      "title": "Senior Backend Engineer",
+      "externalPath": "/job/India-Bengaluru/Senior-Backend-Engineer_JR1000001",
+      "locationsText": "India, Bengaluru",
+      "postedOn": "Posted Today",
+      "bulletFields": ["JR1000001"]
+    },
+    {
+      "title": "Platform Engineer",
+      "externalPath": "/job/India-Remote/Platform-Engineer",
+      "locationsText": "India,   Remote",
+      "postedOn": "Posted 30+ Days Ago",
+      "bulletFields": []
+    }
+  ],
+  "facets": [],
+  "userAuthenticated": false
+}

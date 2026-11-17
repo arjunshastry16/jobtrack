@@ -2,7 +2,9 @@
 // tracking systems such as Greenhouse). Each board type implements Board; callers don't
 // care which ATS a company uses.
 //
-// Only official public JSON APIs are used, never HTML scraping.
+// Official public JSON APIs are used, never HTML scraping. The one exception is Workday,
+// which has no public API: its client reads the JSON the public careers page itself loads,
+// and is deliberately slow and polite (see Workday).
 package boards
 
 import (
@@ -12,6 +14,8 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -34,7 +38,7 @@ type Board interface {
 }
 
 // Supported lists the board types that have a client, i.e. what a watch may use.
-var Supported = []string{"greenhouse", "lever", "ashby", "smartrecruiters"}
+var Supported = []string{"greenhouse", "lever", "ashby", "smartrecruiters", "workday"}
 
 // ErrBoardNotFound means the board has no company with that token (HTTP 404). It is not
 // worth retrying: the watch is misconfigured.
@@ -44,6 +48,8 @@ var ErrBoardNotFound = errors.New("boards: no such company board")
 type HTTPError struct {
 	Board string
 	Code  int
+	// RetryAfter is how long the board asked us to wait (Retry-After header), or 0.
+	RetryAfter time.Duration
 }
 
 func (e *HTTPError) Error() string {
@@ -55,9 +61,27 @@ func (e *HTTPError) Error() string {
 var tokenPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
 // ValidToken reports whether s looks like a board token. Must match the CHECK
-// constraint on watches.board_token.
+// constraint on watches.board_token. (Workday tokens are different: see ParseWorkdayURL.)
 func ValidToken(s string) bool {
 	return tokenPattern.MatchString(s) && s != "." && s != ".."
+}
+
+// NormalizeToken checks what a user entered as a watch's board token and returns the
+// form to store: the company's id on the board, or for Workday the canonical form of
+// the pasted careers-site URL.
+func NormalizeToken(board, raw string) (string, error) {
+	if board == "workday" {
+		site, err := ParseWorkdayURL(raw)
+		if err != nil {
+			return "", err
+		}
+		return site.Token(), nil
+	}
+	tok := strings.TrimSpace(raw)
+	if !ValidToken(tok) {
+		return "", errors.New(`must be the company's id on the board, e.g. "stripe" (letters, digits, . _ -)`)
+	}
+	return tok, nil
 }
 
 const (
@@ -81,6 +105,12 @@ func getJSON(ctx context.Context, client *http.Client, board, url string) (io.Re
 	if err != nil {
 		return nil, fmt.Errorf("boards: %s: build request: %w", board, err)
 	}
+	return doJSON(client, board, req)
+}
+
+// doJSON sends req and returns the (size-limited) body if the status is 200; a 404 is
+// ErrBoardNotFound and anything else an *HTTPError.
+func doJSON(client *http.Client, board string, req *http.Request) (io.ReadCloser, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 
@@ -99,6 +129,21 @@ func getJSON(ctx context.Context, client *http.Client, board, url string) (io.Re
 		return nil, ErrBoardNotFound
 	default:
 		_ = resp.Body.Close()
-		return nil, &HTTPError{Board: board, Code: resp.StatusCode}
+		return nil, &HTTPError{Board: board, Code: resp.StatusCode, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
+}
+
+// retryAfter parses a Retry-After header: delay-seconds or an HTTP date. 0 if absent or invalid.
+func retryAfter(h string, now time.Time) time.Duration {
+	h = strings.TrimSpace(h)
+	if h == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(h); err == nil {
+		return max(time.Duration(secs)*time.Second, 0)
+	}
+	if t, err := http.ParseTime(h); err == nil {
+		return max(t.Sub(now), 0)
+	}
+	return 0
 }

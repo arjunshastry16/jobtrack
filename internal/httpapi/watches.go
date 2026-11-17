@@ -67,10 +67,17 @@ func (in *watchInput) normalize() (keywords []string, enabled bool, errs map[str
 		errs["board"] = "must be one of: " + strings.Join(boards.Supported, ", ")
 	}
 
-	in.BoardToken = strings.TrimSpace(in.BoardToken)
-	if !boards.ValidToken(in.BoardToken) {
-		errs["board_token"] = "must be the company's id on the board, e.g. \"stripe\" (letters, digits, . _ -)"
+	// Usually the company's id on the board; for Workday, the careers-site URL, stored in
+	// canonical form.
+	tok, err := boards.NormalizeToken(in.Board, in.BoardToken)
+	if err != nil {
+		if in.Board == "workday" {
+			errs["board_token"] = "must be the careers-site URL, e.g. https://<company>.wd5.myworkdayjobs.com/<site>: " + err.Error()
+		} else {
+			errs["board_token"] = err.Error()
+		}
 	}
+	in.BoardToken = tok
 
 	// Keywords are matched case-insensitively against titles, so store them lower-case,
 	// trimmed and without duplicates, keeping the order given.
