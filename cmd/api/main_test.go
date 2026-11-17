@@ -31,13 +31,20 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// TestRunServesAndShutsDown starts the real server on a random port, calls /healthz,
-// then cancels the context (like SIGTERM) and expects a clean exit.
+// unreachableDB points at a port nothing listens on, so the database is "down".
+const unreachableDB = "postgres://u@127.0.0.1:1/db?connect_timeout=1"
+
+// TestRunServesAndShutsDown starts the real server on a random port with the database
+// down, checks /healthz is 200 (alive) and /readyz is 503 (not ready), then cancels the
+// context (like SIGTERM) and expects a clean exit.
 func TestRunServesAndShutsDown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	env := map[string]string{"JOBTRACK_ADDR": "127.0.0.1:0"} // port 0: the OS picks a free port
+	env := map[string]string{
+		"JOBTRACK_ADDR":         "127.0.0.1:0", // port 0: the OS picks a free port
+		"JOBTRACK_DATABASE_URL": unreachableDB,
+	}
 	logs := &syncBuffer{}
 
 	done := make(chan error, 1)
@@ -45,17 +52,11 @@ func TestRunServesAndShutsDown(t *testing.T) {
 
 	addr := waitForListenAddr(t, logs)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", nil)
-	if err != nil {
-		t.Fatal(err)
+	if got := getStatus(t, "http://"+addr+"/healthz"); got != http.StatusOK {
+		t.Fatalf("GET /healthz status = %d, want 200", got)
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("GET /healthz: %v", err)
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /healthz status = %d, want 200", resp.StatusCode)
+	if got := getStatus(t, "http://"+addr+"/readyz"); got != http.StatusServiceUnavailable {
+		t.Fatalf("GET /readyz status = %d, want 503 with the database down", got)
 	}
 
 	cancel()
@@ -72,8 +73,22 @@ func TestRunServesAndShutsDown(t *testing.T) {
 	}
 }
 
+func getStatus(t *testing.T, url string) int {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
 func TestRunRejectsBadConfig(t *testing.T) {
-	env := map[string]string{"JOBTRACK_LOG_LEVEL": "loud"}
+	env := map[string]string{"JOBTRACK_DATABASE_URL": unreachableDB, "JOBTRACK_LOG_LEVEL": "loud"}
 	err := run(context.Background(), func(k string) string { return env[k] }, &syncBuffer{})
 	if err == nil {
 		t.Fatal("run() = nil, want a config error")

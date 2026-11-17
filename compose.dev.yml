@@ -1,0 +1,32 @@
+# Local development database. Start with `make db-up`.
+# Only reachable from this machine (bound to 127.0.0.1) and capped so it can't starve other services.
+name: jobtrack-dev
+
+services:
+  postgres:
+    image: postgres:18.7-alpine3.24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jobtrack
+      POSTGRES_PASSWORD: ${JOBTRACK_DEV_DB_PASSWORD:-jobtrack}
+      POSTGRES_DB: jobtrack
+    ports:
+      - "127.0.0.1:${JOBTRACK_DEV_DB_PORT:-5433}:5432"
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/<major>/; mount the parent.
+      # Override the host path in .env (e.g. to put it on a bigger/faster disk).
+      - ${JOBTRACK_DEV_PGDATA:-./.data/postgres}:/var/lib/postgresql
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobtrack -d jobtrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 200
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/arjunshastry16/jobtrack/internal/config"
+	"github.com/arjunshastry16/jobtrack/internal/db"
 	"github.com/arjunshastry16/jobtrack/internal/httpapi"
 )
 
@@ -42,8 +43,15 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 
 	logger := slog.New(slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: cfg.LogLevel}))
 
+	pool, err := db.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	// Runs when run returns, after the HTTP server has stopped using the pool.
+	defer pool.Close()
+
 	srv := &http.Server{
-		Handler: httpapi.NewRouter(version),
+		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Logger: logger}),
 		// Timeouts stop slow or stuck clients from holding connections open forever.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

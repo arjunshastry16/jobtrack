@@ -20,3 +20,6 @@ web/dist/
 .vscode/
 *.swp
 .DS_Store
+
+# Local dev data
+/.data/

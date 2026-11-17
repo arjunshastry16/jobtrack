@@ -2,6 +2,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -11,6 +12,8 @@ import (
 type Config struct {
 	// Addr is the host:port the HTTP server listens on.
 	Addr string
+	// DatabaseURL is the Postgres connection string (required).
+	DatabaseURL string
 	// LogLevel is the minimum level that gets logged.
 	LogLevel slog.Level
 	// ShutdownTimeout bounds how long in-flight requests get to finish on shutdown.
@@ -29,6 +32,11 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
 		Addr:            defaultAddr,
 		ShutdownTimeout: defaultShutdownTimeout,
+	}
+
+	cfg.DatabaseURL = getenv("JOBTRACK_DATABASE_URL")
+	if cfg.DatabaseURL == "" {
+		return Config{}, errors.New("JOBTRACK_DATABASE_URL is required")
 	}
 
 	if v := getenv("JOBTRACK_ADDR"); v != "" {
