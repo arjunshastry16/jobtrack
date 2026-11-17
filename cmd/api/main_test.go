@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -80,11 +81,19 @@ func TestRunServesAndShutsDown(t *testing.T) {
 			t.Fatalf("run() returned %v, want nil after shutdown", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("run() did not return within 5s of cancellation")
+		t.Fatalf("run() did not return within 5s of cancellation; logs:\n%s", logs.String())
 	}
 	if !strings.Contains(logs.String(), "stopped cleanly") {
 		t.Errorf("logs missing shutdown message:\n%s", logs.String())
 	}
+}
+
+// testClient opens a fresh connection per request and closes it afterwards. The default
+// client keeps connections alive and may dial a spare one it never uses; http.Server.Shutdown
+// waits up to 5s for such never-used connections, which made the shutdown test flaky in CI.
+var testClient = &http.Client{
+	Transport: &http.Transport{DisableKeepAlives: true},
+	Timeout:   5 * time.Second,
 }
 
 func getStatus(t *testing.T, url string) int {
@@ -93,11 +102,12 @@ func getStatus(t *testing.T, url string) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
-	_ = resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body) // read to the end so the connection is finished cleanly
 	return resp.StatusCode
 }
 
