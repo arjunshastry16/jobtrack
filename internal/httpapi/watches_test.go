@@ -25,6 +25,7 @@ func TestWatchInputNormalize(t *testing.T) {
 		in           watchInput
 		wantErrs     []string
 		wantKeywords []string
+		wantLocs     []string
 		wantEnabled  bool
 		wantStored   string // the board_token stored, checked when set
 	}{
@@ -32,6 +33,13 @@ func TestWatchInputNormalize(t *testing.T) {
 			name:         "cleans keywords, defaults enabled",
 			in:           watchInput{CompanyID: 1, Board: " Greenhouse ", BoardToken: " stripe ", Keywords: []string{" Backend ", "backend", "", "Site  Reliability", "PLATFORM"}},
 			wantKeywords: []string{"backend", "site reliability", "platform"},
+			wantEnabled:  true,
+		},
+		{
+			name:         "keywords and locations stored the way they're matched",
+			in:           watchInput{CompanyID: 1, Board: "lever", BoardToken: "paytm", Keywords: []string{"Back-End", "C++"}, Locations: []string{" India", "BANGALORE", "india", "Remote!", "--"}},
+			wantKeywords: []string{"back end", "c++"},
+			wantLocs:     []string{"india", "bengaluru", "remote"},
 			wantEnabled:  true,
 		},
 		{name: "no keywords means all", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x"}, wantKeywords: []string{}, wantEnabled: true},
@@ -49,21 +57,24 @@ func TestWatchInputNormalize(t *testing.T) {
 		{name: "workday host is pinned", in: watchInput{CompanyID: 1, Board: "workday", BoardToken: notWorkdayURL}, wantErrs: []string{"board_token"}},
 		{name: "unsupported board", in: watchInput{CompanyID: 1, Board: "bamboohr", BoardToken: "x"}, wantErrs: []string{"board"}},
 		{name: "token with slash", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "a/b"}, wantErrs: []string{"board_token"}},
-		{name: "keyword too long", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Keywords: []string{strings.Repeat("k", maxKeywordLen+1)}}, wantErrs: []string{"keywords"}},
-		{name: "too many keywords", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Keywords: manyKeywords(maxKeywords + 1)}, wantErrs: []string{"keywords"}},
+		{name: "keyword too long", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Keywords: []string{strings.Repeat("k", maxTermLen+1)}}, wantErrs: []string{"keywords"}},
+		{name: "too many keywords", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Keywords: manyTerms(maxTerms + 1)}, wantErrs: []string{"keywords"}},
+		{name: "location too long", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Locations: []string{strings.Repeat("l", maxTermLen+1)}}, wantErrs: []string{"locations"}},
+		{name: "too many locations", in: watchInput{CompanyID: 1, Board: "greenhouse", BoardToken: "x", Locations: manyTerms(maxTerms + 1)}, wantErrs: []string{"locations"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := tt.in
-			kw, enabled, errs := in.normalize()
+			f, errs := in.normalize()
 			if got := slices.Sorted(maps.Keys(errs)); !slices.Equal(got, slices.Sorted(slices.Values(tt.wantErrs))) {
 				t.Fatalf("error fields = %v, want %v (%v)", got, tt.wantErrs, errs)
 			}
 			if len(tt.wantErrs) > 0 {
 				return
 			}
-			if !slices.Equal(kw, tt.wantKeywords) || enabled != tt.wantEnabled {
-				t.Errorf("keywords %q enabled %v; want %q %v", kw, enabled, tt.wantKeywords, tt.wantEnabled)
+			if !slices.Equal(f.keywords, tt.wantKeywords) || !slices.Equal(f.locations, tt.wantLocs) || f.enabled != tt.wantEnabled {
+				t.Errorf("keywords %q locations %q enabled %v; want %q %q %v",
+					f.keywords, f.locations, f.enabled, tt.wantKeywords, tt.wantLocs, tt.wantEnabled)
 			}
 			if tt.wantStored != "" && in.BoardToken != tt.wantStored {
 				t.Errorf("board_token = %q, want %q", in.BoardToken, tt.wantStored)
@@ -72,7 +83,7 @@ func TestWatchInputNormalize(t *testing.T) {
 	}
 }
 
-func manyKeywords(n int) []string {
+func manyTerms(n int) []string {
 	out := make([]string, n)
 	for i := range out {
 		out[i] = "kw" + strconv.Itoa(i)
@@ -90,9 +101,11 @@ func TestWatchesCRUD(t *testing.T) {
 	var created watchJSON
 	rec := call(t, h, http.MethodPost, "/api/v1/watches", map[string]any{
 		"company_id": co, "board": "greenhouse", "board_token": "stripe", "keywords": []string{"Backend", "SRE"},
+		"locations": []string{"India", "Remote"},
 	}, &created)
 	wantStatus(t, rec, http.StatusCreated)
-	if !created.Enabled || !slices.Equal(created.Keywords, []string{"backend", "sre"}) || created.LastCheckedAt != nil {
+	if !created.Enabled || !slices.Equal(created.Keywords, []string{"backend", "sre"}) ||
+		!slices.Equal(created.Locations, []string{"india", "remote"}) || created.LastCheckedAt != nil {
 		t.Fatalf("created = %+v", created)
 	}
 	if rec.Header().Get("Location") != watchPath(created.ID) {
@@ -116,12 +129,13 @@ func TestWatchesCRUD(t *testing.T) {
 		t.Errorf("list = %+v", list.Watches)
 	}
 
-	// Replace: pause it and clear keywords.
+	// Replace: pause it, clear keywords, change locations.
 	var updated watchJSON
 	wantStatus(t, call(t, h, http.MethodPut, watchPath(created.ID), map[string]any{
 		"company_id": co, "board": "greenhouse", "board_token": "stripe", "enabled": false,
+		"locations": []string{"Bangalore"},
 	}, &updated), http.StatusOK)
-	if updated.Enabled || len(updated.Keywords) != 0 {
+	if updated.Enabled || len(updated.Keywords) != 0 || !slices.Equal(updated.Locations, []string{"bengaluru"}) {
 		t.Errorf("updated = %+v", updated)
 	}
 

@@ -875,8 +875,8 @@ components:
     Watch:
       type: object
       additionalProperties: false
-      required: [id, company_id, board, board_token, keywords, enabled, last_checked_at, last_error,
-                 created_at, updated_at]
+      required: [id, company_id, board, board_token, keywords, locations, enabled, last_checked_at,
+                 last_error, created_at, updated_at]
       properties:
         id: { type: integer, format: int64 }
         company_id: { type: integer, format: int64 }
@@ -888,7 +888,16 @@ components:
             canonical form, e.g. "nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite?locationHierarchy1=…"
         keywords:
           type: array
-          description: Lower-case; a posting matches if its title contains any. Empty = all postings.
+          description: |
+            Normalized (lower-case words). A posting matches if its title contains any of them
+            as whole words: "ai" matches "AI Engineer" but not "Maintenance". Empty = any title.
+          items: { type: string }
+        locations:
+          type: array
+          description: |
+            Normalized like keywords. A posting matches if its location contains any of them as
+            whole words ("india" matches "Pune, India" but not "Indiana"), or if the board
+            doesn't say where (empty, or a count like "2 Locations"). Empty = anywhere.
           items: { type: string }
         enabled: { type: boolean }
         last_checked_at: { type: string, format: date-time, nullable: true }
@@ -913,5 +922,11 @@ components:
         keywords:
           type: array
           maxItems: 20
+          description: Words or phrases to look for in posting titles, e.g. ["backend", "site reliability"].
+          items: { type: string, maxLength: 50 }
+        locations:
+          type: array
+          maxItems: 20
+          description: Places to look for in posting locations, e.g. ["india", "bengaluru", "remote"].
           items: { type: string, maxLength: 50 }
         enabled: { type: boolean, default: true }

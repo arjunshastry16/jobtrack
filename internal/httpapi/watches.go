@@ -10,12 +10,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/arjunshastry16/jobtrack/internal/boards"
+	"github.com/arjunshastry16/jobtrack/internal/match"
 	"github.com/arjunshastry16/jobtrack/internal/store"
 )
 
 const (
-	maxKeywords   = 20
-	maxKeywordLen = 50
+	// Limits for each of a watch's term lists (keywords, locations).
+	maxTerms   = 20
+	maxTermLen = 50
 
 	msgWatchNotFound = "watch not found"
 	msgWatchConflict = "this board is already being watched"
@@ -27,6 +29,7 @@ type watchJSON struct {
 	Board         string     `json:"board"`
 	BoardToken    string     `json:"board_token"`
 	Keywords      []string   `json:"keywords"`
+	Locations     []string   `json:"locations"`
 	Enabled       bool       `json:"enabled"`
 	LastCheckedAt *time.Time `json:"last_checked_at"`
 	LastError     *string    `json:"last_error"`
@@ -35,13 +38,9 @@ type watchJSON struct {
 }
 
 func toWatchJSON(w store.Watch) watchJSON {
-	kw := w.Keywords
-	if kw == nil {
-		kw = []string{}
-	}
 	return watchJSON{
-		ID: w.ID, CompanyID: w.CompanyID, Board: w.Board, BoardToken: w.BoardToken, Keywords: kw,
-		Enabled: w.Enabled, LastCheckedAt: w.LastCheckedAt, LastError: w.LastError,
+		ID: w.ID, CompanyID: w.CompanyID, Board: w.Board, BoardToken: w.BoardToken,
+		Keywords: nonNil(w.Keywords), Locations: nonNil(w.Locations), Enabled: w.Enabled, LastCheckedAt: w.LastCheckedAt, LastError: w.LastError,
 		CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt,
 	}
 }
@@ -52,11 +51,19 @@ type watchInput struct {
 	Board      string   `json:"board"`
 	BoardToken string   `json:"board_token"`
 	Keywords   []string `json:"keywords"`
+	Locations  []string `json:"locations"`
 	Enabled    *bool    `json:"enabled"` // default true
 }
 
-// normalize validates the input and returns the cleaned keyword list and enabled flag.
-func (in *watchInput) normalize() (keywords []string, enabled bool, errs map[string]string) {
+// watchFields is a validated watchInput's derived values.
+type watchFields struct {
+	keywords, locations []string
+	enabled             bool
+}
+
+// normalize validates the input, cleaning Board and BoardToken in place, and returns the
+// cleaned term lists and enabled flag.
+func (in *watchInput) normalize() (f watchFields, errs map[string]string) {
 	errs = map[string]string{}
 	if in.CompanyID <= 0 {
 		errs["company_id"] = "is required"
@@ -79,28 +86,40 @@ func (in *watchInput) normalize() (keywords []string, enabled bool, errs map[str
 	}
 	in.BoardToken = tok
 
-	// Keywords are matched case-insensitively against titles, so store them lower-case,
-	// trimmed and without duplicates, keeping the order given.
-	keywords = []string{}
-	for _, k := range in.Keywords {
-		k = strings.ToLower(strings.Join(strings.Fields(k), " "))
-		if k == "" || slices.Contains(keywords, k) {
-			continue
-		}
-		if utf8.RuneCountInString(k) > maxKeywordLen {
-			errs["keywords"] = fmt.Sprintf("each keyword must be at most %d characters", maxKeywordLen)
-		}
-		keywords = append(keywords, k)
-	}
-	if len(keywords) > maxKeywords {
-		errs["keywords"] = fmt.Sprintf("at most %d keywords", maxKeywords)
-	}
-
-	enabled = in.Enabled == nil || *in.Enabled
+	f.keywords = normalizeTerms(in.Keywords, "keywords", errs)
+	f.locations = normalizeTerms(in.Locations, "locations", errs)
+	f.enabled = in.Enabled == nil || *in.Enabled
 	if len(errs) == 0 {
 		errs = nil
 	}
-	return keywords, enabled, errs
+	return f, errs
+}
+
+// normalizeTerms cleans a list of filter terms: stored in match.Normalize form (the form
+// they're matched in), without empty terms or duplicates, in the order given.
+func normalizeTerms(raw []string, field string, errs map[string]string) []string {
+	terms := []string{}
+	for _, t := range raw {
+		t = match.Normalize(t)
+		if t == "" || slices.Contains(terms, t) {
+			continue
+		}
+		if utf8.RuneCountInString(t) > maxTermLen {
+			errs[field] = fmt.Sprintf("each entry must be at most %d characters", maxTermLen)
+		}
+		terms = append(terms, t)
+	}
+	if len(terms) > maxTerms {
+		errs[field] = fmt.Sprintf("at most %d entries", maxTerms)
+	}
+	return terms
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func (a *api) createWatch(w http.ResponseWriter, r *http.Request) {
@@ -108,13 +127,14 @@ func (a *api) createWatch(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	keywords, enabled, errs := in.normalize()
+	f, errs := in.normalize()
 	if errs != nil {
 		writeValidationError(w, errs)
 		return
 	}
 	wt, err := a.store.CreateWatch(r.Context(), store.CreateWatchParams{
-		CompanyID: in.CompanyID, Board: in.Board, BoardToken: in.BoardToken, Keywords: keywords, Enabled: enabled,
+		CompanyID: in.CompanyID, Board: in.Board, BoardToken: in.BoardToken,
+		Keywords: f.keywords, Locations: f.locations, Enabled: f.enabled,
 	})
 	if pgCode(err) == pgForeignKeyViolation {
 		writeValidationError(w, map[string]string{"company_id": "does not exist"})
@@ -163,13 +183,14 @@ func (a *api) updateWatch(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	keywords, enabled, errs := in.normalize()
+	f, errs := in.normalize()
 	if errs != nil {
 		writeValidationError(w, errs)
 		return
 	}
 	wt, err := a.store.UpdateWatch(r.Context(), store.UpdateWatchParams{
-		ID: id, CompanyID: in.CompanyID, Board: in.Board, BoardToken: in.BoardToken, Keywords: keywords, Enabled: enabled,
+		ID: id, CompanyID: in.CompanyID, Board: in.Board, BoardToken: in.BoardToken,
+		Keywords: f.keywords, Locations: f.locations, Enabled: f.enabled,
 	})
 	if pgCode(err) == pgForeignKeyViolation {
 		writeValidationError(w, map[string]string{"company_id": "does not exist"})

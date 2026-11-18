@@ -10,9 +10,9 @@ import (
 )
 
 const createWatch = `-- name: CreateWatch :one
-INSERT INTO watches (company_id, board, board_token, keywords, enabled)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, company_id, board, board_token, keywords, enabled, last_checked_at, last_error, created_at, updated_at
+INSERT INTO watches (company_id, board, board_token, keywords, locations, enabled)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, company_id, board, board_token, keywords, enabled, last_checked_at, last_error, created_at, updated_at, locations
 `
 
 type CreateWatchParams struct {
@@ -20,6 +20,7 @@ type CreateWatchParams struct {
 	Board      string
 	BoardToken string
 	Keywords   []string
+	Locations  []string
 	Enabled    bool
 }
 
@@ -29,6 +30,7 @@ func (q *Queries) CreateWatch(ctx context.Context, arg CreateWatchParams) (Watch
 		arg.Board,
 		arg.BoardToken,
 		arg.Keywords,
+		arg.Locations,
 		arg.Enabled,
 	)
 	var i Watch
@@ -43,6 +45,7 @@ func (q *Queries) CreateWatch(ctx context.Context, arg CreateWatchParams) (Watch
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Locations,
 	)
 	return i, err
 }
@@ -61,7 +64,7 @@ func (q *Queries) DeleteWatch(ctx context.Context, id int64) (int64, error) {
 }
 
 const getWatch = `-- name: GetWatch :one
-SELECT id, company_id, board, board_token, keywords, enabled, last_checked_at, last_error, created_at, updated_at FROM watches
+SELECT id, company_id, board, board_token, keywords, enabled, last_checked_at, last_error, created_at, updated_at, locations FROM watches
 WHERE id = $1
 `
 
@@ -79,12 +82,13 @@ func (q *Queries) GetWatch(ctx context.Context, id int64) (Watch, error) {
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Locations,
 	)
 	return i, err
 }
 
 const listWatches = `-- name: ListWatches :many
-SELECT id, company_id, board, board_token, keywords, enabled, last_checked_at, last_error, created_at, updated_at FROM watches
+SELECT id, company_id, board, board_token, keywords, enabled, last_checked_at, last_error, created_at, updated_at, locations FROM watches
 ORDER BY board, lower(board_token), id
 `
 
@@ -108,6 +112,7 @@ func (q *Queries) ListWatches(ctx context.Context) ([]Watch, error) {
 			&i.LastError,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Locations,
 		); err != nil {
 			return nil, err
 		}
@@ -121,9 +126,10 @@ func (q *Queries) ListWatches(ctx context.Context) ([]Watch, error) {
 
 const updateWatch = `-- name: UpdateWatch :one
 UPDATE watches
-SET company_id = $2, board = $3, board_token = $4, keywords = $5, enabled = $6, updated_at = now()
+SET company_id = $2, board = $3, board_token = $4, keywords = $5, locations = $6, enabled = $7,
+    updated_at = now()
 WHERE id = $1
-RETURNING id, company_id, board, board_token, keywords, enabled, last_checked_at, last_error, created_at, updated_at
+RETURNING id, company_id, board, board_token, keywords, enabled, last_checked_at, last_error, created_at, updated_at, locations
 `
 
 type UpdateWatchParams struct {
@@ -132,6 +138,7 @@ type UpdateWatchParams struct {
 	Board      string
 	BoardToken string
 	Keywords   []string
+	Locations  []string
 	Enabled    bool
 }
 
@@ -142,6 +149,7 @@ func (q *Queries) UpdateWatch(ctx context.Context, arg UpdateWatchParams) (Watch
 		arg.Board,
 		arg.BoardToken,
 		arg.Keywords,
+		arg.Locations,
 		arg.Enabled,
 	)
 	var i Watch
@@ -156,6 +164,7 @@ func (q *Queries) UpdateWatch(ctx context.Context, arg UpdateWatchParams) (Watch
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Locations,
 	)
 	return i, err
 }

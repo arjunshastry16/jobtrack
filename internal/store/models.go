@@ -92,4 +92,5 @@ type Watch struct {
 	LastError     *string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	Locations     []string
 }
