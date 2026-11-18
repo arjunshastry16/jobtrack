@@ -4,14 +4,15 @@
 # Tests deploy/deploy.sh end to end against a throwaway stack (project jobtrack-deploytest
 # on 127.0.0.1:8092) and a throwaway registry (127.0.0.1:5555), beside production and
 # without touching it. From SOURCE_IMAGE (default: ghcr.io/arjunshastry16/jobtrack:main)
-# it makes four releases, then moves :main between them and checks what deploy.sh does:
+# it makes four releases, then moves :main between them and checks what deploy.sh does
+# (and last, what heartbeat.sh reports to a stand-in for Uptime Kuma):
 #
 #   v1, v2       good builds (v2 differs only by a label, so it's a new digest)
 #   bad-migrate  can't even run its migrations
 #   bad-port     migrates and passes its own container health check, but doesn't answer
 #                on the published port: only the host-side gate can catch it
 #
-# Needs Docker, curl and flock. Everything it creates is removed on exit.
+# Needs Docker, curl, flock and python3. Everything it creates is removed on exit.
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
@@ -19,6 +20,7 @@ src=${1:-ghcr.io/arjunshastry16/jobtrack:main}
 project=jobtrack-deploytest
 reg_port=5555
 app_port=8092
+kuma_port=5556
 registry=$project-registry
 repo=127.0.0.1:$reg_port/jobtrack
 registry_image=registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
@@ -27,8 +29,10 @@ work=$(mktemp -d)
 stack=$work/stack
 data=$work/data
 mkdir -p "$stack" "$data"
+kuma_pid=
 
 cleanup() {
+	[ -z "$kuma_pid" ] || kill "$kuma_pid" 2>/dev/null || true
 	(cd "$stack" && docker compose down --volumes --remove-orphans >/dev/null 2>&1) || true
 	docker rm -f "$registry" >/dev/null 2>&1 || true
 	# Postgres made its files as its own user; remove them as root, inside a container.
@@ -99,7 +103,7 @@ build v2 'LABEL org.opencontainers.image.version=2222222'
 build bad-migrate 'LABEL org.opencontainers.image.version=badbad1' 'ENTRYPOINT ["/jobtrack", "no-such-command"]'
 build bad-port 'LABEL org.opencontainers.image.version=badbad2' 'ENV JOBTRACK_ADDR=0.0.0.0:9999'
 
-cp "$repo_root/deploy/compose.yml" "$repo_root/deploy/deploy.sh" "$stack/"
+cp "$repo_root/deploy/compose.yml" "$repo_root/deploy/deploy.sh" "$repo_root/deploy/heartbeat.sh" "$stack/"
 (
 	umask 077
 	cat >"$stack/.env" <<EOF
@@ -183,6 +187,53 @@ check ".env still private" [ "$(stat -c %a "$stack/.env")" = 600 ]
 echo "9. bad arguments"
 deploy --sideways
 check "exit 64" [ "$rc" = 64 ]
+
+echo "10. heartbeat.sh reports to Kuma"
+# A stand-in for Kuma's push endpoint: answers 200 and writes down each request's path.
+kuma_log=$work/kuma.log
+python3 - "$kuma_port" "$kuma_log" <<'PY' &
+import http.server, sys
+port, log = int(sys.argv[1]), sys.argv[2]
+class Push(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        with open(log, "a") as f:
+            f.write(self.path + "\n")
+        self.send_response(200)
+        self.end_headers()
+    def log_message(self, *args):
+        pass
+http.server.HTTPServer(("127.0.0.1", port), Push).serve_forever()
+PY
+kuma_pid=$!
+for _ in $(seq 30); do
+	curl -fsS -o /dev/null "http://127.0.0.1:$kuma_port/ping" 2>/dev/null && break
+	sleep 0.2
+done
+: >"$kuma_log"
+heartbeat() {
+	set +e
+	out=$("$stack/heartbeat.sh" 2>&1)
+	rc=$?
+	set -e
+}
+pushed() { tail -n 1 "$kuma_log" | grep -q -- "$1"; }
+heartbeat
+check "no push URL: exit 0" [ "$rc" = 0 ]
+check "no push URL: nothing sent" [ ! -s "$kuma_log" ]
+# As Kuma shows it, with its example query; heartbeat.sh drops that and adds its own.
+echo "JOBTRACK_KUMA_PUSH_URL=http://127.0.0.1:$kuma_port/api/push/t0ken?status=up&msg=OK&ping=" >>"$stack/.env"
+heartbeat
+check "up: exit 0" [ "$rc" = 0 ]
+check "up: pushed status=up" pushed '^/api/push/t0ken?status=up&msg=ready&ping=[0-9]*$'
+(cd "$stack" && docker compose stop api >/dev/null 2>&1)
+heartbeat
+check "down: exit 0" [ "$rc" = 0 ]
+check "down: pushed status=down" pushed "^/api/push/t0ken?status=down&msg=no+answer+on+127.0.0.1%3a$app_port&ping=[0-9]*\$"
+kill "$kuma_pid"
+wait "$kuma_pid" 2>/dev/null || true
+kuma_pid=
+heartbeat
+check "Kuma unreachable: exit non-zero" [ "$rc" != 0 ]
 
 if [ "$failures" -gt 0 ]; then
 	echo "FAIL: $failures check(s) failed; last deploy output:"

@@ -85,6 +85,11 @@ against a throwaway stack and a local registry. It checks:
   published port;
 - that a failed build is skipped, `--force`, the lock, and a revert.
 
+Uptime Kuma watches the app through [`deploy/heartbeat.sh`](deploy/heartbeat.sh), which
+pushes the result of `/readyz` every minute. The runbook, covering the three gates a
+commit passes, day-to-day commands, rolling back by hand, migration rules and the
+bad-build drill, is [`docs/deploy.md`](docs/deploy.md).
+
 ## API
 
 REST + JSON under `/api/v1`, described in [`docs/openapi.yaml`](docs/openapi.yaml) (also served at
