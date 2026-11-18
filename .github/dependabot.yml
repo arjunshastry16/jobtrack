@@ -1,10 +1,17 @@
-# Weekly PRs to bump pinned GitHub Actions, Go modules and the frontend's npm packages.
+# Weekly PRs to bump pinned GitHub Actions, Go modules, the frontend's npm packages and
+# the Dockerfile's base images.
+#
+# Every ecosystem has a 14-day cooldown: only releases that have been out for two weeks
+# are proposed, so a compromised or broken release is likely caught (and pulled) before
+# it reaches this repo.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
     groups:
       actions:
         patterns: ["*"]
@@ -13,6 +20,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
     groups:
       go-modules:
         patterns: ["*"]
@@ -21,8 +30,6 @@ updates:
     directory: /web
     schedule:
       interval: weekly
-    # Only propose releases that have been out for two weeks, so a compromised or
-    # broken release is likely caught (and pulled) before it reaches this repo.
     cooldown:
       default-days: 14
     groups:
