@@ -1,4 +1,4 @@
-# Weekly PRs to bump pinned GitHub Actions and Go module dependencies.
+# Weekly PRs to bump pinned GitHub Actions, Go modules and the frontend's npm packages.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -15,4 +15,16 @@ updates:
       interval: weekly
     groups:
       go-modules:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    # Only propose releases that have been out for two weeks, so a compromised or
+    # broken release is likely caught (and pulled) before it reaches this repo.
+    cooldown:
+      default-days: 14
+    groups:
+      npm:
         patterns: ["*"]

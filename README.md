@@ -62,15 +62,22 @@ against it.
 
 ## Development
 
-Requires Go 1.27+, Docker, and [golangci-lint](https://golangci-lint.run/) v2.
+Requires Go 1.27+, Docker, [golangci-lint](https://golangci-lint.run/) v2, and Node 22.12+
+for the frontend.
 
 ```sh
 cp .env.example .env
-make dev    # start Postgres (Docker), apply migrations, run the API on 127.0.0.1:8090
-make test   # unit + integration tests (integration tests use the dev Postgres)
-make lint   # run linters
-make help   # list all tasks
+make dev          # start Postgres (Docker), apply migrations, run the API on 127.0.0.1:8090
+make test         # unit + integration tests (integration tests use the dev Postgres)
+make lint         # run linters
+make web-install  # frontend dependencies (exact locked versions, no install scripts)
+make web-dev      # frontend on 127.0.0.1:5173, proxying API calls to :8090
+make help         # list all tasks
 ```
+
+The frontend (`web/`, React + TypeScript + Vite) calls the API through a client typed
+from `docs/openapi.yaml` (`make web-generate`), so using an endpoint or field the API
+doesn't have is a compile error. CI fails if the generated types are out of date.
 
 ## License
 

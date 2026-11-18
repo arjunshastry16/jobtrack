@@ -43,6 +43,30 @@ jobs:
       - name: Fail on drift
         run: git diff --exit-code -- internal/store
 
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # Exactly the locked versions; install scripts are off (web/.npmrc).
+      - name: Install
+        run: npm ci
+      # The frontend's API types are generated from docs/openapi.yaml. Fails if the spec
+      # changed without regenerating, so the UI can't silently drift from the API.
+      - name: API types up to date
+        run: npm run generate && git diff --exit-code -- src/api/schema.d.ts
+      - name: Type-check and build
+        run: npm run build
+
   test:
     name: Test
     runs-on: ubuntu-latest

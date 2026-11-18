@@ -17,7 +17,7 @@ RACE_FLAG := $(if $(filter 1,$(RACE)),-race,)
 
 .PHONY: help
 help: ## Show this help
-	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: run
 run: ## Run the API locally (listens on 127.0.0.1:8090)
@@ -73,3 +73,21 @@ fmt: ## Format code (gofmt + goimports via golangci-lint)
 .PHONY: tidy
 tidy: ## Tidy go.mod / go.sum
 	go mod tidy
+
+# Frontend (web/). Needs Node 22.12+ (see web/.nvmrc).
+
+.PHONY: web-install
+web-install: ## Install the frontend's exact locked dependencies
+	cd web && npm ci
+
+.PHONY: web-dev
+web-dev: ## Run the frontend dev server on 127.0.0.1:5173 (proxies the API; run `make run` too)
+	cd web && npm run dev
+
+.PHONY: web-generate
+web-generate: ## Regenerate the frontend's API types from docs/openapi.yaml
+	cd web && npm run generate
+
+.PHONY: web-build
+web-build: ## Type-check and build the frontend into web/dist
+	cd web && npm run build
