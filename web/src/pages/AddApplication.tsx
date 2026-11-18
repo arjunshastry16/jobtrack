@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { api, errorMessage, type Schemas } from "../api/client";
 import type { Application } from "../board";
+import { companyByName } from "../companies";
 import { localDate, occurredAt } from "../detail";
 
 type Company = Schemas["Company"];
@@ -35,15 +36,9 @@ export default function AddApplication(props: { onAdded: (app: Application) => v
     setBusy(true);
     setError(null);
     try {
-      const name = companyName.trim();
-      let company = companies.find((c) => c.name.toLowerCase() === name.toLowerCase());
-      if (!company) {
-        const created = await api.POST("/api/v1/companies", { body: { name } });
-        if (!created.data) {
-          throw new Error(errorMessage(created.error, created.response));
-        }
-        company = created.data;
-        setCompanies((cs) => [...cs, created.data]);
+      const { company, created } = await companyByName(companies, companyName);
+      if (created) {
+        setCompanies((cs) => [...cs, company]);
       }
       // A date before today starts the timeline then, so reminders count from the day
       // you actually applied.

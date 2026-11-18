@@ -133,9 +133,13 @@ export default function Postings() {
       {current === null && !inbox.error && <p className="muted">Loading…</p>}
       {current?.postings.length === 0 && (
         <p className="muted">
-          {filtered
-            ? "No postings match these filters."
-            : "No postings yet. Watches are checked once a day; new matches show up here."}
+          {filtered ? (
+            "No postings match these filters."
+          ) : (
+            <>
+              No postings yet. <Link to="/watches">Watches</Link> are checked once a day; new matches show up here.
+            </>
+          )}
         </p>
       )}
 

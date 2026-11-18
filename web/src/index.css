@@ -264,3 +264,46 @@ button.link {
 .danger button {
   color: #d32f2f;
 }
+
+/* Watches */
+ul.watches {
+  list-style: none;
+  padding: 0;
+}
+ul.watches > li {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
+}
+ul.watches > li.paused {
+  opacity: 0.75;
+}
+ul.watches dl.fields {
+  margin: 0.4rem 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0;
+}
+.badge.health-failing {
+  background: color-mix(in srgb, #d32f2f 25%, transparent);
+}
+.badge.health-paused,
+.badge.health-waiting {
+  background: var(--panel);
+}
+.badge.health-ok {
+  background: color-mix(in srgb, #2e7d32 25%, transparent);
+}
+form.stacked label.check {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+.watch-form {
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+}

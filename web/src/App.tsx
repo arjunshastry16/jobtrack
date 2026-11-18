@@ -5,6 +5,7 @@ import ApplicationPage from "./pages/application/ApplicationPage";
 import Board from "./pages/Board";
 import NotFound from "./pages/NotFound";
 import Postings from "./pages/Postings";
+import Watches from "./pages/Watches";
 
 // The page layout and its routes. Routing happens in the browser; the Go server answers
 // every non-API path with this app (see internal/webui), so deep links work.
@@ -18,6 +19,7 @@ export default function App() {
             Board
           </NavLink>
           <NavLink to="/postings">Postings</NavLink>
+          <NavLink to="/watches">Watches</NavLink>
         </nav>
         <ApiVersion />
       </header>
@@ -26,6 +28,7 @@ export default function App() {
           <Route path="/" element={<Board />} />
           <Route path="/applications/:id" element={<ApplicationPage />} />
           <Route path="/postings" element={<Postings />} />
+          <Route path="/watches" element={<Watches />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
