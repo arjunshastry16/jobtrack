@@ -15,6 +15,9 @@ RACE ?= 1
 endif
 RACE_FLAG := $(if $(filter 1,$(RACE)),-race,)
 
+# Stamped into the binary and reported by /healthz.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 .PHONY: help
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
@@ -58,6 +61,10 @@ SQLC_IMAGE := sqlc/sqlc:1.31.1
 generate: ## Regenerate internal/store from SQL (runs sqlc in Docker)
 	docker run --rm --user "$$(id -u):$$(id -g)" --volume "$(CURDIR):/src" --workdir /src $(SQLC_IMAGE) generate
 
+.PHONY: build
+build: web-build ## Build bin/jobtrack: the API with the web UI embedded (needs web-install once)
+	go build -tags webui -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/jobtrack ./cmd/api
+
 .PHONY: test
 test: ## Run all tests (with the race detector where supported)
 	go test $(RACE_FLAG) -count=1 ./...
@@ -89,5 +96,5 @@ web-generate: ## Regenerate the frontend's API types from docs/openapi.yaml
 	cd web && npm run generate
 
 .PHONY: web-build
-web-build: ## Type-check and build the frontend into web/dist
+web-build: ## Type-check and build the frontend into internal/webui/dist
 	cd web && npm run build

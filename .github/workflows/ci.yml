@@ -66,6 +66,17 @@ jobs:
         run: npm run generate && git diff --exit-code -- src/api/schema.d.ts
       - name: Type-check and build
         run: npm run build
+      # The build lands in internal/webui/dist; check the Go binary embeds it and that
+      # it fits the Content-Security-Policy (no inline scripts or styles).
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Build the binary with the UI embedded
+        working-directory: .
+        run: go build -tags webui -o /dev/null ./cmd/api
+      - name: Test the embedded build
+        working-directory: .
+        run: go test -tags webui ./internal/webui/
 
   test:
     name: Test

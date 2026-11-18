@@ -72,12 +72,18 @@ make test         # unit + integration tests (integration tests use the dev Post
 make lint         # run linters
 make web-install  # frontend dependencies (exact locked versions, no install scripts)
 make web-dev      # frontend on 127.0.0.1:5173, proxying API calls to :8090
+make build        # bin/jobtrack: one binary serving the API and the web app
 make help         # list all tasks
 ```
 
 The frontend (`web/`, React + TypeScript + Vite) calls the API through a client typed
 from `docs/openapi.yaml` (`make web-generate`), so using an endpoint or field the API
 doesn't have is a compile error. CI fails if the generated types are out of date.
+
+`make build` embeds the built frontend in the Go binary (`go:embed`, behind the `webui`
+build tag), so production is a single file: API calls go to `/api/v1/…`, and every other
+path is the app, routed in the browser. Without the tag (plain `go build`/`go test`),
+nothing needs Node.
 
 ## License
 

@@ -11,9 +11,9 @@ coverage.*
 .env.*
 !.env.example
 
-# Frontend
+# Frontend (built into internal/webui/dist for embedding; never committed)
 web/node_modules/
-web/dist/
+/internal/webui/dist/
 
 # Editors / OS
 .idea/

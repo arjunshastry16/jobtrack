@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // fakeDB is a Pinger whose result the test controls.
@@ -88,5 +90,42 @@ func TestReadyz(t *testing.T) {
 				t.Errorf("status field = %q, want %q", body.Status, tt.wantBody)
 			}
 		})
+	}
+}
+
+// The web app and the API share one server: app pages get index.html, API paths never do.
+func TestRouterServesTheWebApp(t *testing.T) {
+	const index = "<!doctype html><title>jobtrack</title>"
+	h := NewRouter(Deps{
+		Version: "test", DB: fakeDB{}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		UI: fstest.MapFS{"index.html": {Data: []byte(index)}},
+	})
+
+	for _, path := range []string{"/", "/applications/12", "/postings"} {
+		if rec := do(t, h, http.MethodGet, path); rec.Code != http.StatusOK || rec.Body.String() != index {
+			t.Errorf("GET %s: %d %q, want the app", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Unknown API paths are the API's JSON 404, not the app.
+	for _, path := range []string{"/api", "/api/", "/api/v1/nope", "/api/v2/companies"} {
+		rec := do(t, h, http.MethodGet, path)
+		var body struct {
+			Error struct{ Code string } `json:"error"`
+		}
+		if rec.Code != http.StatusNotFound || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Error.Code != "not_found" {
+			t.Errorf("GET %s: %d %q, want a JSON not_found", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Real endpoints still win over the catch-all, and wrong methods still get 405.
+	if rec := do(t, h, http.MethodGet, "/healthz"); !strings.Contains(rec.Body.String(), `"status":"ok"`) {
+		t.Errorf("/healthz = %q", rec.Body.String())
+	}
+	if rec := do(t, h, http.MethodPost, "/healthz"); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /healthz = %d, want 405", rec.Code)
+	}
+	if rec := do(t, h, http.MethodDelete, "/api/v1/postings"); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("DELETE /api/v1/postings = %d, want 405", rec.Code)
 	}
 }

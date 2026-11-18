@@ -3,12 +3,15 @@ package httpapi
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/arjunshastry16/jobtrack/docs"
 	"github.com/arjunshastry16/jobtrack/internal/store"
+	"github.com/arjunshastry16/jobtrack/internal/webui"
 )
 
 // Pinger is anything that can check it can reach the database. *pgxpool.Pool satisfies it;
@@ -26,6 +29,8 @@ type Deps struct {
 	Logger  *slog.Logger
 	// RequestTimeout bounds each request; zero means defaultRequestTimeout.
 	RequestTimeout time.Duration
+	// UI is the built frontend (webui.Files()); nil serves a note that it isn't included.
+	UI fs.FS
 }
 
 // defaultRequestTimeout is below the server's 15s WriteTimeout, so a slow handler gets
@@ -98,6 +103,11 @@ func NewRouter(d Deps) http.Handler {
 	for _, rt := range routes(a, d) {
 		mux.HandleFunc(rt.method+" "+rt.pattern, rt.handler)
 	}
+	// Every other GET is the web app (its pages are routed in the browser), except under
+	// /api/, where a mistyped endpoint must get the API's JSON 404, not an HTML page.
+	// Only GET: a POST to an unknown path still gets the mux's 404, and a known path
+	// with the wrong method still gets its 405.
+	mux.Handle("GET /", appOrAPINotFound(webui.Handler(d.UI)))
 
 	timeout := d.RequestTimeout
 	if timeout == 0 {
@@ -108,6 +118,16 @@ func NewRouter(d Deps) http.Handler {
 		withTimeout(timeout,
 			accessLog(d.Logger,
 				recoverPanics(d.Logger, mux))))
+}
+
+func appOrAPINotFound(app http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+			writeError(w, http.StatusNotFound, codeNotFound, "no such endpoint; see /api/v1/openapi.yaml")
+			return
+		}
+		app.ServeHTTP(w, r)
+	})
 }
 
 // handleOpenAPISpec serves the API description (also used to generate the frontend client).

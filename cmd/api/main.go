@@ -26,6 +26,7 @@ import (
 	"github.com/arjunshastry16/jobtrack/internal/requestid"
 	"github.com/arjunshastry16/jobtrack/internal/scheduler"
 	"github.com/arjunshastry16/jobtrack/internal/store"
+	"github.com/arjunshastry16/jobtrack/internal/webui"
 )
 
 // version is overwritten at build time with -ldflags "-X main.version=<git sha>".
@@ -97,7 +98,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	background.Go(func() { sched.Run(bgCtx) })
 
 	srv := &http.Server{
-		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Store: st, Logger: logger}),
+		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Store: st, Logger: logger, UI: webui.Files()}),
 		// Timeouts stop slow or stuck clients from holding connections open forever.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -111,7 +112,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.Addr, err)
 	}
-	logger.Info("http server listening", "addr", ln.Addr().String(), "version", version)
+	logger.Info("http server listening", "addr", ln.Addr().String(), "version", version, "web_ui", webui.Files() != nil)
 
 	// Serve blocks, so it runs in its own goroutine and reports back on a channel.
 	serveErr := make(chan error, 1)

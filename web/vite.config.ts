@@ -15,6 +15,10 @@ export default defineConfig({
     proxy: { "/api": api, "/healthz": api, "/readyz": api },
   },
   build: {
+    // Straight into the Go package that embeds it (internal/webui, -tags webui), so
+    // `make build` produces one binary with the whole app inside.
+    outDir: "../internal/webui/dist",
+    emptyOutDir: true,
     sourcemap: true,
   },
 });
