@@ -43,7 +43,7 @@ func TestMigrateNeedsOnlyTheDatabase(t *testing.T) {
 
 func TestReadyzURL(t *testing.T) {
 	for addr, want := range map[string]string{
-		"":               "http://127.0.0.1:8090/readyz",
+		"":               "http://127.0.0.1:8091/readyz",
 		"127.0.0.1:9000": "http://127.0.0.1:9000/readyz",
 		"0.0.0.0:8090":   "http://127.0.0.1:8090/readyz",
 		":8090":          "http://127.0.0.1:8090/readyz",

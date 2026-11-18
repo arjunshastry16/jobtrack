@@ -1,0 +1,112 @@
+# Production stack on the Pi: copied to ~/stacks/jobtrack/compose.yml, with its .env
+# beside it (see deploy/.env.example). Started with `docker compose up -d`:
+#
+#   db       Postgres, data on the USB HDD, on an internal network with no internet
+#   migrate  runs `jobtrack migrate up` once the database is healthy, then exits
+#   api      starts only after migrate succeeded; published on 127.0.0.1:8090 only,
+#            reached over the tailnet through `tailscale serve --https=9443`
+#
+# Every service is capped (memory, CPU, processes) so it can't starve Nextcloud and the
+# rest, and keeps at most 30 MB of logs.
+name: jobtrack
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-app: &app
+  # Set by .env, pinned to a digest so a restart can't silently pick up a new image.
+  image: ${JOBTRACK_IMAGE:?set JOBTRACK_IMAGE in .env}
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging: *logging
+
+services:
+  db:
+    image: postgres:18.7-alpine3.24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jobtrack
+      POSTGRES_PASSWORD: ${JOBTRACK_DB_PASSWORD:?set JOBTRACK_DB_PASSWORD in .env}
+      POSTGRES_DB: jobtrack
+    volumes:
+      # Postgres 18 keeps data under /var/lib/postgresql/<major>/; mount the parent.
+      - ${JOBTRACK_DATA_DIR:-/mnt/cnimbus/jobtrack}/postgres:/var/lib/postgresql
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30"]
+    healthcheck:
+      # Over TCP: during first-time setup a socket-only temporary server answers first.
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -U jobtrack -d jobtrack"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+      start_interval: 2s
+    networks: [backend]
+    # The image stops Postgres with SIGINT (a fast, clean shutdown); give it time to
+    # finish rather than being killed into crash recovery.
+    stop_grace_period: 60s
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 200
+    logging: *logging
+
+  migrate:
+    <<: *app
+    command: [migrate, up]
+    environment:
+      JOBTRACK_DATABASE_URL: postgres://jobtrack:${JOBTRACK_DB_PASSWORD}@db:5432/jobtrack?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+    mem_limit: 64m
+    cpus: 0.5
+    pids_limit: 50
+
+  api:
+    <<: *app
+    restart: unless-stopped
+    environment:
+      JOBTRACK_DATABASE_URL: postgres://jobtrack:${JOBTRACK_DB_PASSWORD}@db:5432/jobtrack?sslmode=disable
+      JOBTRACK_ALLOWED_LOGINS: ${JOBTRACK_ALLOWED_LOGINS:?set JOBTRACK_ALLOWED_LOGINS in .env}
+      JOBTRACK_NTFY_URL: ${JOBTRACK_NTFY_URL:-}
+      JOBTRACK_NTFY_TOKEN: ${JOBTRACK_NTFY_TOKEN:-}
+      JOBTRACK_REMINDER_AFTER_DAYS: ${JOBTRACK_REMINDER_AFTER_DAYS:-}
+      JOBTRACK_REMINDER_HOURS: ${JOBTRACK_REMINDER_HOURS:-}
+      JOBTRACK_SYNC_HOUR: ${JOBTRACK_SYNC_HOUR:-}
+      JOBTRACK_LOG_LEVEL: ${JOBTRACK_LOG_LEVEL:-}
+      # In-flight requests and jobs get 20s to finish; Docker waits 30s before killing.
+      JOBTRACK_SHUTDOWN_TIMEOUT: 20s
+      # Reminder hours and the nightly sync are in local time.
+      TZ: ${TZ:-Asia/Kolkata}
+    depends_on:
+      db:
+        condition: service_healthy
+      # Never start a build against a schema it doesn't expect.
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8090:8090"
+    # backend reaches the database; egress reaches the job boards and ntfy.
+    networks: [backend, egress]
+    healthcheck:
+      test: ["CMD", "/jobtrack", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 2s
+    stop_grace_period: 30s
+    mem_limit: 128m
+    cpus: 1.0
+    pids_limit: 100
+
+networks:
+  # No route to the internet: only the api and migrate can talk to the database.
+  backend:
+    internal: true
+  egress: {}

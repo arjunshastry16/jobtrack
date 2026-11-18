@@ -33,7 +33,7 @@ func TestLoad(t *testing.T) {
 			name: "defaults",
 			env:  env(nil),
 			want: Config{
-				Addr: "127.0.0.1:8090", DatabaseURL: testURL, LogLevel: slog.LevelInfo, ShutdownTimeout: 10 * time.Second,
+				Addr: "127.0.0.1:8091", DatabaseURL: testURL, LogLevel: slog.LevelInfo, ShutdownTimeout: 10 * time.Second,
 				ReminderAfterDays: 7, ReminderStartHour: 9, ReminderEndHour: 21, SyncHour: 6,
 				AllowedLogins: []string{"me@github"},
 			},

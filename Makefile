@@ -23,7 +23,7 @@ help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: run
-run: ## Run the API locally (listens on 127.0.0.1:8090)
+run: ## Run the API locally (listens on 127.0.0.1:8091)
 	go run ./cmd/api
 
 .PHONY: dev
@@ -83,9 +83,11 @@ ACTIONLINT_IMAGE := rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47e
 SHELLCHECK_IMAGE := koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
 
 .PHONY: lint-ops
-lint-ops: ## Lint GitHub workflows and shell scripts (runs the linters in Docker)
+lint-ops: ## Lint GitHub workflows, shell scripts and the production compose file
 	docker run --rm --volume "$(CURDIR):/repo:ro" --workdir /repo $(ACTIONLINT_IMAGE) -no-color
 	docker run --rm --volume "$(CURDIR):/repo:ro" --workdir /repo $(SHELLCHECK_IMAGE) scripts/*.sh
+	JOBTRACK_IMAGE=check JOBTRACK_DB_PASSWORD=check JOBTRACK_ALLOWED_LOGINS=check@example \
+		docker compose --file deploy/compose.yml --env-file /dev/null config --quiet
 
 .PHONY: fmt
 fmt: ## Format code (gofmt + goimports via golangci-lint)

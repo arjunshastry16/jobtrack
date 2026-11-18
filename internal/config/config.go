@@ -46,8 +46,9 @@ type Config struct {
 }
 
 // DefaultAddr is where the server listens unless JOBTRACK_ADDR says otherwise: loopback
-// only, safe for local development on the Pi.
-const DefaultAddr = "127.0.0.1:8090"
+// only, for local development on the Pi. Production (the container image) listens on
+// :8090, published on the Pi's 127.0.0.1:8090, so the two never collide.
+const DefaultAddr = "127.0.0.1:8091"
 
 // Other defaults.
 const (

@@ -42,6 +42,21 @@ entered by hand.
 - **Delivery:** GitHub Actions → arm64 image on GHCR → pull-based deploy on the Pi with health-gated automatic rollback
 - **Operations:** Prometheus, Grafana and Alertmanager; SLOs with burn-rate alerts; nightly backups with automated restore tests
 
+## Production on the Pi
+
+[`deploy/compose.yml`](deploy/compose.yml) runs in `~/stacks/jobtrack` next to a private
+`.env` (template: [`deploy/.env.example`](deploy/.env.example)):
+
+| Service | What it does | Cap |
+|---|---|---|
+| `db` | Postgres 18. Data on the USB HDD; on an internal network with no internet access. | 256 MB, 1 CPU |
+| `migrate` | `jobtrack migrate up`, once the database is healthy | 64 MB |
+| `api` | Starts only if migrate succeeded. Published on `127.0.0.1:8090` only. | 128 MB, 1 CPU |
+
+All containers have read-only filesystems, drop all Linux capabilities, and keep at most
+30 MB of logs. `tailscale serve --https=9443` puts the app on the tailnet and adds the
+caller's login. The image is pinned by digest in `.env`.
+
 ## API
 
 REST + JSON under `/api/v1`, described in [`docs/openapi.yaml`](docs/openapi.yaml) (also served at
@@ -83,11 +98,11 @@ for the frontend.
 
 ```sh
 cp .env.example .env
-make dev          # start Postgres (Docker), apply migrations, run the API on 127.0.0.1:8090
+make dev          # start Postgres (Docker), apply migrations, run the API on 127.0.0.1:8091
 make test         # unit + integration tests (integration tests use the dev Postgres)
 make lint         # run linters
 make web-install  # frontend dependencies (exact locked versions, no install scripts)
-make web-dev      # frontend on 127.0.0.1:5173, proxying API calls to :8090
+make web-dev      # frontend on 127.0.0.1:5173, proxying API calls to :8091
 make web-test     # frontend unit tests (Vitest)
 make build        # bin/jobtrack: one binary serving the API and the web app
 make image        # the container image (jobtrack:local)
