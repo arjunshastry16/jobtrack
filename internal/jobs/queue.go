@@ -34,8 +34,12 @@ type Job struct {
 	Payload     json.RawMessage
 	Attempt     int32
 	MaxAttempts int32
-	LeaseEnds   time.Time
+	Lease       time.Duration // how long this claim is leased for
+	LeaseEnds   time.Time     // by the database clock
 }
+
+// MaxLease is the longest lease a job may ask for.
+const MaxLease = 24 * time.Hour
 
 // Queue enqueues and claims jobs.
 type Queue struct {
@@ -66,6 +70,19 @@ func MaxAttempts(n int32) EnqueueOption {
 	return func(p *store.EnqueueJobParams) { p.MaxAttempts = n }
 }
 
+// Lease sets how long each claim of the job lasts, instead of the worker's default.
+// Use it for jobs that can legitimately run longer than the default lease; the worker
+// stops the handler at 90% of it. Rounded down to whole seconds; 1s to MaxLease.
+func Lease(d time.Duration) EnqueueOption {
+	return func(p *store.EnqueueJobParams) {
+		secs := int32(-1) // invalid: rejected by Enqueue
+		if d >= time.Second && d <= MaxLease {
+			secs = int32(d / time.Second)
+		}
+		p.LeaseSeconds = &secs
+	}
+}
+
 // Enqueue adds a job of the given kind with payload encoded as JSON. created is false
 // (and id 0) when DedupeKey matched an existing job.
 func (q *Queue) Enqueue(ctx context.Context, kind string, payload any, opts ...EnqueueOption) (id int64, created bool, err error) {
@@ -83,6 +100,9 @@ func (q *Queue) Enqueue(ctx context.Context, kind string, payload any, opts ...E
 	if p.MaxAttempts < 1 {
 		return 0, false, fmt.Errorf("jobs: max attempts must be at least 1, got %d", p.MaxAttempts)
 	}
+	if p.LeaseSeconds != nil && *p.LeaseSeconds < 1 {
+		return 0, false, fmt.Errorf("jobs: lease must be between 1s and %s", MaxLease)
+	}
 
 	id, err = q.q.EnqueueJob(ctx, p)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -94,25 +114,28 @@ func (q *Queue) Enqueue(ctx context.Context, kind string, payload any, opts ...E
 	return id, true, nil
 }
 
-// Claim takes up to n due jobs, oldest first, leasing each for lease. The caller must
-// Complete each job before its lease ends.
-func (q *Queue) Claim(ctx context.Context, n int, lease time.Duration) ([]Job, error) {
+// Claim takes up to n due jobs, oldest first, leasing each for its own lease (see Lease)
+// or else defaultLease. The caller must Complete each job before its lease ends.
+func (q *Queue) Claim(ctx context.Context, n int, defaultLease time.Duration) ([]Job, error) {
 	if n < 1 || n > 1000 {
 		return nil, fmt.Errorf("jobs: claim batch size must be 1..1000, got %d", n)
 	}
-	if lease <= 0 {
-		return nil, fmt.Errorf("jobs: lease must be positive, got %s", lease)
+	if defaultLease <= 0 {
+		return nil, fmt.Errorf("jobs: lease must be positive, got %s", defaultLease)
 	}
 	rows, err := q.q.ClaimJobs(ctx, store.ClaimJobsParams{
-		LeaseSeconds: lease.Seconds(),
-		MaxJobs:      int32(n), //nolint:gosec // bounded to 1..1000 above
+		DefaultLeaseSeconds: defaultLease.Seconds(),
+		MaxJobs:             int32(n), //nolint:gosec // bounded to 1..1000 above
 	})
 	if err != nil {
 		return nil, fmt.Errorf("jobs: claim: %w", err)
 	}
 	out := make([]Job, 0, len(rows))
 	for _, r := range rows {
-		j := Job{ID: r.ID, Kind: r.Kind, Payload: r.Payload, Attempt: r.Attempts, MaxAttempts: r.MaxAttempts}
+		j := Job{ID: r.ID, Kind: r.Kind, Payload: r.Payload, Attempt: r.Attempts, MaxAttempts: r.MaxAttempts, Lease: defaultLease}
+		if r.LeaseSeconds != nil {
+			j.Lease = time.Duration(*r.LeaseSeconds) * time.Second
+		}
 		if r.LockedUntil != nil {
 			j.LeaseEnds = *r.LockedUntil
 		}

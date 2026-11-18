@@ -2,8 +2,8 @@
 -- dedupe_key already exists.
 --
 -- name: EnqueueJob :one
-INSERT INTO jobs (kind, payload, run_at, max_attempts, dedupe_key)
-VALUES ($1, $2, COALESCE(sqlc.narg(run_at)::timestamptz, now()), $3, $4)
+INSERT INTO jobs (kind, payload, run_at, max_attempts, dedupe_key, lease_seconds)
+VALUES ($1, $2, COALESCE(sqlc.narg(run_at)::timestamptz, now()), $3, $4, sqlc.narg(lease_seconds)::int)
 ON CONFLICT (kind, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
 RETURNING id;
 
@@ -12,13 +12,14 @@ RETURNING id;
 -- FOR UPDATE locks the chosen rows; SKIP LOCKED makes other workers pass over rows
 -- that are already locked instead of waiting for them. So concurrent workers each get
 -- a disjoint batch, and nobody blocks. The lease (locked_until) is computed with the
--- database clock so workers' clocks don't matter.
+-- database clock so workers' clocks don't matter. It is the job's own lease_seconds if
+-- set, otherwise the worker's default.
 --
 -- name: ClaimJobs :many
 UPDATE jobs
 SET state        = 'running',
     attempts     = attempts + 1,
-    locked_until = now() + make_interval(secs => sqlc.arg(lease_seconds)::double precision),
+    locked_until = now() + make_interval(secs => COALESCE(lease_seconds, sqlc.arg(default_lease_seconds)::double precision)),
     updated_at   = now()
 WHERE id IN (
     SELECT id FROM jobs

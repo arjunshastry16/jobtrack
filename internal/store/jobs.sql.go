@@ -14,7 +14,7 @@ const claimJobs = `-- name: ClaimJobs :many
 UPDATE jobs
 SET state        = 'running',
     attempts     = attempts + 1,
-    locked_until = now() + make_interval(secs => $1::double precision),
+    locked_until = now() + make_interval(secs => COALESCE(lease_seconds, $1::double precision)),
     updated_at   = now()
 WHERE id IN (
     SELECT id FROM jobs
@@ -23,12 +23,12 @@ WHERE id IN (
     LIMIT $2::int
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, kind, payload, state, run_at, attempts, max_attempts, locked_until, last_error, dedupe_key, created_at, updated_at, finished_at
+RETURNING id, kind, payload, state, run_at, attempts, max_attempts, locked_until, last_error, dedupe_key, created_at, updated_at, finished_at, lease_seconds
 `
 
 type ClaimJobsParams struct {
-	LeaseSeconds float64
-	MaxJobs      int32
+	DefaultLeaseSeconds float64
+	MaxJobs             int32
 }
 
 // ClaimJobs atomically takes up to max_jobs due jobs for one worker.
@@ -36,9 +36,10 @@ type ClaimJobsParams struct {
 // FOR UPDATE locks the chosen rows; SKIP LOCKED makes other workers pass over rows
 // that are already locked instead of waiting for them. So concurrent workers each get
 // a disjoint batch, and nobody blocks. The lease (locked_until) is computed with the
-// database clock so workers' clocks don't matter.
+// database clock so workers' clocks don't matter. It is the job's own lease_seconds if
+// set, otherwise the worker's default.
 func (q *Queries) ClaimJobs(ctx context.Context, arg ClaimJobsParams) ([]Job, error) {
-	rows, err := q.db.Query(ctx, claimJobs, arg.LeaseSeconds, arg.MaxJobs)
+	rows, err := q.db.Query(ctx, claimJobs, arg.DefaultLeaseSeconds, arg.MaxJobs)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +61,7 @@ func (q *Queries) ClaimJobs(ctx context.Context, arg ClaimJobsParams) ([]Job, er
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.FinishedAt,
+			&i.LeaseSeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -94,18 +96,19 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (int64
 }
 
 const enqueueJob = `-- name: EnqueueJob :one
-INSERT INTO jobs (kind, payload, run_at, max_attempts, dedupe_key)
-VALUES ($1, $2, COALESCE($5::timestamptz, now()), $3, $4)
+INSERT INTO jobs (kind, payload, run_at, max_attempts, dedupe_key, lease_seconds)
+VALUES ($1, $2, COALESCE($5::timestamptz, now()), $3, $4, $6::int)
 ON CONFLICT (kind, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
 RETURNING id
 `
 
 type EnqueueJobParams struct {
-	Kind        string
-	Payload     []byte
-	MaxAttempts int32
-	DedupeKey   *string
-	RunAt       *time.Time
+	Kind         string
+	Payload      []byte
+	MaxAttempts  int32
+	DedupeKey    *string
+	RunAt        *time.Time
+	LeaseSeconds *int32
 }
 
 // EnqueueJob returns no row (pgx.ErrNoRows) when a job with the same kind and
@@ -117,6 +120,7 @@ func (q *Queries) EnqueueJob(ctx context.Context, arg EnqueueJobParams) (int64, 
 		arg.MaxAttempts,
 		arg.DedupeKey,
 		arg.RunAt,
+		arg.LeaseSeconds,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -174,7 +178,7 @@ func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) (FailJobRow, e
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, kind, payload, state, run_at, attempts, max_attempts, locked_until, last_error, dedupe_key, created_at, updated_at, finished_at FROM jobs
+SELECT id, kind, payload, state, run_at, attempts, max_attempts, locked_until, last_error, dedupe_key, created_at, updated_at, finished_at, lease_seconds FROM jobs
 WHERE id = $1
 `
 
@@ -195,6 +199,7 @@ func (q *Queries) GetJob(ctx context.Context, id int64) (Job, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.FinishedAt,
+		&i.LeaseSeconds,
 	)
 	return i, err
 }

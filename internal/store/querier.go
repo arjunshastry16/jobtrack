@@ -16,7 +16,8 @@ type Querier interface {
 	// FOR UPDATE locks the chosen rows; SKIP LOCKED makes other workers pass over rows
 	// that are already locked instead of waiting for them. So concurrent workers each get
 	// a disjoint batch, and nobody blocks. The lease (locked_until) is computed with the
-	// database clock so workers' clocks don't matter.
+	// database clock so workers' clocks don't matter. It is the job's own lease_seconds if
+	// set, otherwise the worker's default.
 	//
 	ClaimJobs(ctx context.Context, arg ClaimJobsParams) ([]Job, error)
 	// CompleteJob marks a running job done. The attempts check is a fencing token: if this

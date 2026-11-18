@@ -20,10 +20,14 @@ type HandlerFunc func(ctx context.Context, j Job) error
 type Config struct {
 	Concurrency  int           // jobs processed in parallel (default 2)
 	PollInterval time.Duration // wait between claims when the queue is empty (default 1s)
-	Lease        time.Duration // how long a claimed job is reserved (default 5m)
+	Lease        time.Duration // how long a claimed job is reserved, unless it set its own (default 5m)
 	ReapInterval time.Duration // how often expired leases are reclaimed (default 30s)
 	BackoffBase  time.Duration // delay before the first retry (default 10s)
 	BackoffMax   time.Duration // longest retry delay (default 1h)
+	// DrainTimeout is how long jobs still running at shutdown get to finish before their
+	// context is cancelled (default 30s). A cancelled job is recorded as failed and
+	// retried later, so a long job can't hold up a restart.
+	DrainTimeout time.Duration
 }
 
 func (c Config) withDefaults() Config {
@@ -44,6 +48,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.BackoffMax <= 0 {
 		c.BackoffMax = time.Hour
+	}
+	if c.DrainTimeout <= 0 {
+		c.DrainTimeout = 30 * time.Second
 	}
 	return c
 }
@@ -117,12 +124,17 @@ func (w *Worker) claimLoop(ctx context.Context) {
 func (w *Worker) process(ctx context.Context, j Job) {
 	log := w.logger.With("job_id", j.ID, "kind", j.Kind, "attempt", j.Attempt)
 
-	// The handler's context is not cancelled by shutdown, so in-flight work can finish
-	// (that's the drain), but it ends before the lease does (90% of it, by this process's
-	// clock), so a hung handler gives up before the job could be handed to another worker.
-	handlerCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.cfg.Lease*9/10)
+	// The handler's context is not cancelled by shutdown straight away, so in-flight work
+	// can finish (that's the drain), but only for DrainTimeout. It also ends before the
+	// lease does (90% of it, by this process's clock), so a hung handler gives up before
+	// the job could be handed to another worker.
+	handlerCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), j.Lease*9/10)
+	stopDrainTimer := context.AfterFunc(ctx, func() {
+		time.AfterFunc(w.cfg.DrainTimeout, cancel) // firing after the job ends is harmless
+	})
 	start := time.Now()
 	err := w.runHandler(handlerCtx, j)
+	stopDrainTimer()
 	cancel()
 	took := time.Since(start)
 

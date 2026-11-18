@@ -161,6 +161,11 @@ func TestInvalidArguments(t *testing.T) {
 	if _, _, err := q.Enqueue(ctx, "k", func() {}); err == nil {
 		t.Error("unencodable payload accepted")
 	}
+	for _, d := range []time.Duration{0, 500 * time.Millisecond, jobs.MaxLease + time.Second} {
+		if _, _, err := q.Enqueue(ctx, "k", nil, jobs.Lease(d)); err == nil {
+			t.Errorf("lease %s accepted", d)
+		}
+	}
 	if _, err := q.Claim(ctx, 0, time.Minute); err == nil {
 		t.Error("batch size 0 accepted")
 	}
@@ -235,5 +240,32 @@ func TestConcurrentWorkersNeverDoubleClaim(t *testing.T) {
 	}
 	if notDone != 0 {
 		t.Errorf("%d jobs not done", notDone)
+	}
+}
+
+// A job can ask for a longer lease than the worker's default (e.g. a slow board fetch).
+func TestPerJobLease(t *testing.T) {
+	t.Parallel()
+	q, _ := newQueue(t)
+	ctx := t.Context()
+	short, _, _ := q.Enqueue(ctx, "quick", nil)
+	long, _, err := q.Enqueue(ctx, "slow", nil, jobs.Lease(20*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claimed, err := q.Claim(ctx, 10, time.Minute)
+	if err != nil || len(claimed) != 2 {
+		t.Fatalf("claimed %d, err %v", len(claimed), err)
+	}
+	for _, j := range claimed {
+		want := map[int64]time.Duration{short: time.Minute, long: 20 * time.Minute}[j.ID]
+		if j.Lease != want {
+			t.Errorf("job %d: Lease = %s, want %s", j.ID, j.Lease, want)
+		}
+		// LeaseEnds comes from the database clock, which is this machine's (or CI's) clock.
+		if got := time.Until(j.LeaseEnds); got < want-30*time.Second || got > want+30*time.Second {
+			t.Errorf("job %d: lease ends in %s, want about %s", j.ID, got.Round(time.Second), want)
+		}
 	}
 }

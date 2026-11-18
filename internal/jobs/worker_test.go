@@ -316,3 +316,72 @@ func TestWorkerConcurrencyLimit(t *testing.T) {
 		t.Errorf("peak jobs in flight = %d, want exactly the concurrency limit 3", peak)
 	}
 }
+
+// The handler's deadline follows the job's own lease, not just the worker's default.
+func TestWorkerUsesJobLease(t *testing.T) {
+	t.Parallel()
+	q, pool := newQueue(t)
+	var mu sync.Mutex
+	left := map[string]time.Duration{}              // job kind -> time left until the handler's deadline
+	w := jobs.NewWorker(q, quietLogger, fastConfig) // default lease 5s
+	for _, kind := range []string{"default", "long"} {
+		w.Handle(kind, func(ctx context.Context, _ jobs.Job) error {
+			deadline, _ := ctx.Deadline()
+			mu.Lock()
+			left[kind] = time.Until(deadline)
+			mu.Unlock()
+			return nil
+		})
+	}
+	a, _, _ := q.Enqueue(t.Context(), "default", nil)
+	b, _, _ := q.Enqueue(t.Context(), "long", nil, jobs.Lease(100*time.Second))
+	startWorker(t, w)
+	waitFor(t, 5*time.Second, "both jobs done", func() bool {
+		return stateIs(t, pool, a, "done")() && stateIs(t, pool, b, "done")()
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if d := left["default"]; d <= 0 || d > 4500*time.Millisecond { // 90% of 5s
+		t.Errorf("default job: deadline in %s, want at most 4.5s", d)
+	}
+	if d := left["long"]; d < 80*time.Second || d > 90*time.Second { // 90% of 100s
+		t.Errorf("long job: deadline in %s, want about 90s", d)
+	}
+}
+
+// A job still running DrainTimeout after shutdown is cancelled and retried later, so it
+// can't hold up a restart.
+func TestWorkerCancelsJobsThatOutlastTheDrain(t *testing.T) {
+	t.Parallel()
+	q, pool := newQueue(t)
+	cfg := fastConfig
+	cfg.Concurrency = 1
+	cfg.DrainTimeout = 100 * time.Millisecond
+
+	started := make(chan struct{})
+	w := jobs.NewWorker(q, quietLogger, cfg)
+	w.Handle("endless", func(ctx context.Context, _ jobs.Job) error {
+		close(started)
+		<-ctx.Done() // runs until cancelled
+		return ctx.Err()
+	})
+	id, _, _ := q.Enqueue(t.Context(), "endless", nil)
+	stop, stopped := startWorker(t, w)
+
+	<-started
+	stop()
+	begin := time.Now()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return: the drain timeout didn't cancel the job")
+	}
+	if took := time.Since(begin); took < cfg.DrainTimeout {
+		t.Errorf("Run returned after %s, before the %s drain timeout", took, cfg.DrainTimeout)
+	}
+	j := jobState(t, pool, id)
+	if j.State != "pending" || j.LastError == nil || !strings.Contains(*j.LastError, "context canceled") {
+		t.Errorf("job after cancelled drain: state %q, last error %v; want pending with context canceled", j.State, j.LastError)
+	}
+}
