@@ -120,11 +120,6 @@ func readyzURL(addr string) (string, error) {
 // run holds the real program. Taking its dependencies as arguments (instead of
 // reading globals like os.Getenv directly) is what lets main_test.go run it.
 func run(ctx context.Context, getenv func(string) string, logOut io.Writer) error {
-	// DRILL (step 4.5, reverted straight after): a new required setting that CI and the
-	// smoke test set but production's .env doesn't. Config drift: CI passes, the Pi fails.
-	if getenv("JOBTRACK_DRILL_SETTING") == "" {
-		return errors.New("JOBTRACK_DRILL_SETTING is required")
-	}
 	cfg, err := config.Load(getenv)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)

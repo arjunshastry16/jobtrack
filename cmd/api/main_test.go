@@ -60,7 +60,6 @@ func TestRunServesAndShutsDown(t *testing.T) {
 		"JOBTRACK_ADDR":           "127.0.0.1:0", // port 0: the OS picks a free port
 		"JOBTRACK_DATABASE_URL":   unreachableDB(t),
 		"JOBTRACK_ALLOWED_LOGINS": "me@github",
-		"JOBTRACK_DRILL_SETTING":  "set",
 	}
 	logs := &syncBuffer{}
 
