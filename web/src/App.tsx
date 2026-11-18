@@ -5,6 +5,7 @@ import ApplicationPage from "./pages/application/ApplicationPage";
 import Board from "./pages/Board";
 import NotFound from "./pages/NotFound";
 import Postings from "./pages/Postings";
+import Stats from "./pages/Stats";
 import Watches from "./pages/Watches";
 
 // The page layout and its routes. Routing happens in the browser; the Go server answers
@@ -20,6 +21,7 @@ export default function App() {
           </NavLink>
           <NavLink to="/postings">Postings</NavLink>
           <NavLink to="/watches">Watches</NavLink>
+          <NavLink to="/stats">Stats</NavLink>
         </nav>
         <ApiVersion />
       </header>
@@ -29,6 +31,7 @@ export default function App() {
           <Route path="/applications/:id" element={<ApplicationPage />} />
           <Route path="/postings" element={<Postings />} />
           <Route path="/watches" element={<Watches />} />
+          <Route path="/stats" element={<Stats />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

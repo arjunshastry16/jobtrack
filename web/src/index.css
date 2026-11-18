@@ -307,3 +307,222 @@ form.stacked label.check {
   border-radius: 0.5rem;
   margin-bottom: 1rem;
 }
+
+/* Stats. Chart colours are the dataviz reference palette, checked for colour-blind
+   separation and contrast in both themes; dark mode has its own steps. */
+:root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-1-soft: #86b6ef;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-1-soft: #184f95;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+  }
+}
+dl.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+dl.tiles > div {
+  display: grid;
+  align-content: start;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+dl.tiles dt {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+dl.tiles dd {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+figure.chart {
+  margin: 2rem 0;
+}
+figure.chart h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+figure.chart figcaption p {
+  margin: 0.2rem 0 0.5rem;
+}
+ul.legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  padding: 0;
+  margin: 0 0 0.5rem;
+}
+ul.legend li {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.key.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+}
+.key.dot {
+  position: static;
+  display: inline-block;
+  transform: none;
+}
+ul.chart-rows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(5.5rem, max-content) 1fr max-content;
+  column-gap: 0.75rem;
+}
+.chart-row {
+  position: relative;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 0.9rem;
+}
+.chart-row[tabindex]:hover,
+.chart-row[tabindex]:focus-visible {
+  background: var(--panel);
+  outline-offset: 0;
+}
+.row-value {
+  font-variant-numeric: tabular-nums;
+}
+.span-rest {
+  grid-column: 2 / -1;
+}
+.track {
+  position: relative;
+  height: 16px;
+}
+.track:has(> .bar, > .stack) {
+  box-shadow: inset 1px 0 var(--baseline);
+}
+.track > .bar,
+.stack {
+  display: flex;
+  gap: 2px;
+  height: 100%;
+}
+.bar {
+  background: var(--series-1);
+  border-radius: 0 4px 4px 0;
+}
+.stack > .bar {
+  border-radius: 0;
+}
+.stack > .bar:last-child {
+  border-radius: 0 4px 4px 0;
+}
+.bar.rejected,
+.key.rejected {
+  background: var(--series-1);
+}
+.bar.withdrawn,
+.key.withdrawn {
+  background: var(--series-2);
+}
+.gridline {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--gridline);
+}
+.range {
+  position: absolute;
+  top: calc(50% - 1px);
+  height: 2px;
+  background: var(--series-1-soft);
+}
+.dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px Canvas;
+}
+.dot.median {
+  background: var(--series-1);
+}
+.dot.p90 {
+  background: var(--series-1-soft);
+}
+.chart-row.axis .track {
+  height: 1.2em;
+}
+.tick {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.tick:first-child {
+  transform: none;
+}
+.tick:last-child {
+  transform: translateX(-100%);
+}
+.tip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: 0;
+  z-index: 1;
+  max-width: min(24rem, 100%);
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: Canvas;
+  box-shadow: 0 2px 6px color-mix(in srgb, CanvasText 15%, transparent);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+.chart-row:hover > .tip,
+.chart-row:focus-visible > .tip {
+  display: block;
+}
+.table-view summary {
+  cursor: pointer;
+  margin-top: 0.5rem;
+  opacity: 0.8;
+}
+.table-view table {
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+.table-view th,
+.table-view td {
+  padding: 0.2rem 0.75rem 0.2rem 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.table-view td + td,
+.table-view th + th {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
