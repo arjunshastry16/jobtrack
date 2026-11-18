@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/url"
 	"os"
 	"testing"
@@ -41,22 +42,19 @@ func New(t *testing.T) *pgxpool.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	admin, err := pgx.Connect(ctx, adminURL)
-	if err != nil {
-		t.Fatalf("connect to test server: %v", err)
-	}
-
 	name := "jt_test_" + randomSuffix(t)
 	ident := pgx.Identifier{name}.Sanitize() // quoted, so it is safe to put in SQL
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+ident); err != nil {
-		_ = admin.Close(ctx)
+	// The admin connection is only held while creating (and later dropping) the
+	// database: with many tests running in parallel, an idle connection per test adds up,
+	// and the Pi's dev server allows only 30.
+	err := adminExec(ctx, adminURL,
+		"CREATE DATABASE "+ident,
+		// Throwaway database: don't wait for each commit to reach the disk. On the Pi's USB
+		// HDD that wait is ~25ms per commit and dominated test time. Never do this for real data.
+		"ALTER DATABASE "+ident+" SET synchronous_commit = off",
+	)
+	if err != nil {
 		t.Fatalf("create test database: %v", err)
-	}
-	// Throwaway database: don't wait for each commit to reach the disk. On the Pi's USB
-	// HDD that wait is ~25ms per commit and dominated test time. Never do this for real data.
-	if _, err := admin.Exec(ctx, "ALTER DATABASE "+ident+" SET synchronous_commit = off"); err != nil {
-		_ = admin.Close(ctx)
-		t.Fatalf("configure test database: %v", err)
 	}
 
 	cfg, err := pgxpool.ParseConfig(adminURL)
@@ -76,10 +74,9 @@ func New(t *testing.T) *pgxpool.Pool {
 		pool.Close()
 		dropCtx, dropCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer dropCancel()
-		if _, err := admin.Exec(dropCtx, "DROP DATABASE IF EXISTS "+ident+" WITH (FORCE)"); err != nil {
+		if err := adminExec(dropCtx, adminURL, "DROP DATABASE IF EXISTS "+ident+" WITH (FORCE)"); err != nil {
 			t.Errorf("drop test database %s: %v", name, err)
 		}
-		_ = admin.Close(dropCtx)
 	})
 
 	// Note: cfg.ConnString() would return the original admin URL, so build the test DB's URL.
@@ -87,6 +84,21 @@ func New(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("migrate test database: %v", err)
 	}
 	return pool
+}
+
+// adminExec runs statements on a short-lived admin connection.
+func adminExec(ctx context.Context, adminURL string, statements ...string) error {
+	conn, err := pgx.Connect(ctx, adminURL)
+	if err != nil {
+		return fmt.Errorf("connect to test server: %w", err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	for _, sql := range statements {
+		if _, err := conn.Exec(ctx, sql); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // withDatabase returns rawURL with its database name replaced.
