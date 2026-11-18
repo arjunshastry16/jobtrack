@@ -1,4 +1,9 @@
-// Command api runs the jobtrack HTTP service.
+// Command api is the jobtrack binary (built as bin/jobtrack, and the container image's
+// entrypoint):
+//
+//	jobtrack                         run the HTTP service and background work
+//	jobtrack migrate up|down|status  apply, roll back or list database migrations
+//	jobtrack healthcheck             exit 0 if the running service is ready (for Docker)
 package main
 
 import (
@@ -14,10 +19,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the time zone database, so TZ (e.g. Asia/Kolkata) works in any image
 
 	"github.com/arjunshastry16/jobtrack/internal/boards"
 	"github.com/arjunshastry16/jobtrack/internal/config"
 	"github.com/arjunshastry16/jobtrack/internal/db"
+	"github.com/arjunshastry16/jobtrack/internal/dbmigrate"
 	"github.com/arjunshastry16/jobtrack/internal/httpapi"
 	"github.com/arjunshastry16/jobtrack/internal/ingest"
 	"github.com/arjunshastry16/jobtrack/internal/jobs"
@@ -35,12 +42,79 @@ var version = "dev"
 func main() {
 	// ctx is cancelled on Ctrl-C (SIGINT) or `docker stop` (SIGTERM), which starts a graceful shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	err := run(ctx, os.Getenv, os.Stdout)
+	err := dispatch(ctx, os.Args[1:], os.Getenv, os.Stdout)
 	stop()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "jobtrack:", err)
 		os.Exit(1)
 	}
+}
+
+// dispatch runs the subcommand named by args (none = the service).
+func dispatch(ctx context.Context, args []string, getenv func(string) string, out io.Writer) error {
+	if len(args) == 0 {
+		return run(ctx, getenv, out)
+	}
+	switch args[0] {
+	case "migrate":
+		// Only needs the database, not the service's other settings.
+		return dbmigrate.Command(ctx, args[1:], getenv("JOBTRACK_DATABASE_URL"), out)
+	case "healthcheck":
+		if len(args) != 1 {
+			return errors.New("usage: jobtrack healthcheck")
+		}
+		return healthcheck(ctx, getenv("JOBTRACK_ADDR"))
+	default:
+		return fmt.Errorf("unknown command %q (want no command, migrate or healthcheck)", args[0])
+	}
+}
+
+// healthcheckTimeout is well under Docker's default 30s health check timeout.
+const healthcheckTimeout = 3 * time.Second
+
+// healthcheck asks the service listening on addr whether it's ready (/readyz, which
+// needs no login). It's the container's health check: the distroless image has no
+// shell or curl to do it with.
+func healthcheck(ctx context.Context, addr string) error {
+	url, err := readyzURL(addr)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, healthcheckTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("healthcheck: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("healthcheck: %s answered %s", url, resp.Status)
+	}
+	return nil
+}
+
+// readyzURL is the /readyz URL of a server listening on addr (JOBTRACK_ADDR, "" for the
+// default). A server listening on every interface (":8090", "0.0.0.0:8090") is asked on
+// loopback.
+func readyzURL(addr string) (string, error) {
+	if addr == "" {
+		addr = config.DefaultAddr
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", fmt.Errorf("JOBTRACK_ADDR: %w", err)
+	}
+	switch host {
+	case "", "0.0.0.0":
+		host = "127.0.0.1"
+	case "::":
+		host = "::1"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/readyz", nil
 }
 
 // run holds the real program. Taking its dependencies as arguments (instead of

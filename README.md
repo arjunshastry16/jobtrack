@@ -90,6 +90,7 @@ make web-install  # frontend dependencies (exact locked versions, no install scr
 make web-dev      # frontend on 127.0.0.1:5173, proxying API calls to :8090
 make web-test     # frontend unit tests (Vitest)
 make build        # bin/jobtrack: one binary serving the API and the web app
+make image        # the container image (jobtrack:local)
 make help         # list all tasks
 ```
 
@@ -101,6 +102,19 @@ doesn't have is a compile error. CI fails if the generated types are out of date
 build tag), so production is a single file: API calls go to `/api/v1/…`, and every other
 path is the app, routed in the browser. Without the tag (plain `go build`/`go test`),
 nothing needs Node.
+
+### Container image
+
+The [`Dockerfile`](Dockerfile) builds the same single binary into a `distroless/static`
+image: about 26 MB, no shell, running as a non-root user. The build stages run on the
+builder's own platform and Go cross-compiles, so an x86_64 CI runner builds the Pi's arm64
+image without emulation. Base images are pinned by digest and kept current by Dependabot.
+
+```sh
+docker run IMAGE                  # serve on :8090 (JOBTRACK_ALLOWED_LOGINS is required)
+docker run IMAGE migrate up       # apply migrations (needs only JOBTRACK_DATABASE_URL)
+docker run IMAGE healthcheck      # exit 0 if the server is ready: the image's HEALTHCHECK
+```
 
 ## License
 

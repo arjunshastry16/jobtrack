@@ -45,15 +45,15 @@ db-psql: ## Open a psql shell on the dev database
 
 .PHONY: migrate
 migrate: ## Apply pending migrations
-	go run ./cmd/migrate up
+	go run ./cmd/api migrate up
 
 .PHONY: migrate-down
 migrate-down: ## Roll back the latest migration
-	go run ./cmd/migrate down
+	go run ./cmd/api migrate down
 
 .PHONY: migrate-status
 migrate-status: ## Show which migrations are applied
-	go run ./cmd/migrate status
+	go run ./cmd/api migrate status
 
 SQLC_IMAGE := sqlc/sqlc:1.31.1
 
@@ -64,6 +64,10 @@ generate: ## Regenerate internal/store from SQL (runs sqlc in Docker)
 .PHONY: build
 build: web-build ## Build bin/jobtrack: the API with the web UI embedded (needs web-install once)
 	go build -tags webui -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/jobtrack ./cmd/api
+
+.PHONY: image
+image: ## Build the container image jobtrack:local for this machine's platform
+	docker build --build-arg VERSION=$(VERSION) -t jobtrack:local .
 
 .PHONY: test
 test: ## Run all tests (with the race detector where supported)

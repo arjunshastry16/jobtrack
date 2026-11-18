@@ -45,9 +45,12 @@ type Config struct {
 	AuthOff bool
 }
 
-// Defaults are safe for local development on the Pi: the server only listens on loopback.
+// DefaultAddr is where the server listens unless JOBTRACK_ADDR says otherwise: loopback
+// only, safe for local development on the Pi.
+const DefaultAddr = "127.0.0.1:8090"
+
+// Other defaults.
 const (
-	defaultAddr              = "127.0.0.1:8090"
 	defaultLogLevel          = "info"
 	defaultShutdownTimeout   = 10 * time.Second
 	defaultReminderAfterDays = 7
@@ -58,7 +61,7 @@ const (
 // Load reads settings through getenv (pass os.Getenv in production, a fake in tests).
 func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
-		Addr:              defaultAddr,
+		Addr:              DefaultAddr,
 		ShutdownTimeout:   defaultShutdownTimeout,
 		ReminderAfterDays: defaultReminderAfterDays,
 		SyncHour:          defaultSyncHour,

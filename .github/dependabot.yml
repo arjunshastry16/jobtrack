@@ -28,3 +28,14 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+
+  # The Dockerfile's base images (pinned by digest).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      docker:
+        patterns: ["*"]

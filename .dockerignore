@@ -1,0 +1,17 @@
+# Only what the image build needs goes to the builder: everything is excluded, then the
+# sources are let back in. Keeps .env, .git and local builds out of the build context.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!migrations/
+!docs/
+!web/
+
+# Built or installed locally; the image builds its own.
+web/node_modules/
+web/dist/
+internal/webui/dist/
+**/*_test.go
+**/testdata/
