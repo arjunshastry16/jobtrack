@@ -31,6 +31,9 @@ type Config struct {
 	// Reminders fire only from ReminderStartHour to ReminderEndHour (exclusive), local
 	// time (set TZ). Configured as JOBTRACK_REMINDER_HOURS=9-21; 0-24 means any time.
 	ReminderStartHour, ReminderEndHour int
+	// SyncHour is the local hour (0-23) from which watched job boards are fetched each
+	// day; the fetch happens once a day, in the first hourly check at or after it.
+	SyncHour int
 }
 
 // Defaults are safe for local development on the Pi: the server only listens on loopback.
@@ -40,6 +43,7 @@ const (
 	defaultShutdownTimeout   = 10 * time.Second
 	defaultReminderAfterDays = 7
 	defaultReminderHours     = "9-21"
+	defaultSyncHour          = 6
 )
 
 // Load reads settings through getenv (pass os.Getenv in production, a fake in tests).
@@ -48,6 +52,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Addr:              defaultAddr,
 		ShutdownTimeout:   defaultShutdownTimeout,
 		ReminderAfterDays: defaultReminderAfterDays,
+		SyncHour:          defaultSyncHour,
 		NtfyURL:           getenv("JOBTRACK_NTFY_URL"),
 		NtfyToken:         getenv("JOBTRACK_NTFY_TOKEN"),
 	}
@@ -97,6 +102,14 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("JOBTRACK_REMINDER_HOURS: %w", err)
 	}
 	cfg.ReminderStartHour, cfg.ReminderEndHour = start, end
+
+	if v := getenv("JOBTRACK_SYNC_HOUR"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > 23 {
+			return Config{}, fmt.Errorf("JOBTRACK_SYNC_HOUR: must be an hour from 0 to 23, got %q", v)
+		}
+		cfg.SyncHour = n
+	}
 
 	return cfg, nil
 }

@@ -25,7 +25,7 @@ func TestLoad(t *testing.T) {
 			env:  map[string]string{"JOBTRACK_DATABASE_URL": testURL},
 			want: Config{
 				Addr: "127.0.0.1:8090", DatabaseURL: testURL, LogLevel: slog.LevelInfo, ShutdownTimeout: 10 * time.Second,
-				ReminderAfterDays: 7, ReminderStartHour: 9, ReminderEndHour: 21,
+				ReminderAfterDays: 7, ReminderStartHour: 9, ReminderEndHour: 21, SyncHour: 6,
 			},
 		},
 		{
@@ -39,11 +39,12 @@ func TestLoad(t *testing.T) {
 				"JOBTRACK_NTFY_TOKEN":          "tk_1",
 				"JOBTRACK_REMINDER_AFTER_DAYS": "10",
 				"JOBTRACK_REMINDER_HOURS":      " 0 - 24 ",
+				"JOBTRACK_SYNC_HOUR":           "0",
 			},
 			want: Config{
 				Addr: ":8080", DatabaseURL: testURL, LogLevel: slog.LevelDebug, ShutdownTimeout: 3 * time.Second,
 				NtfyURL: "https://ntfy.example/jt", NtfyToken: "tk_1",
-				ReminderAfterDays: 10, ReminderStartHour: 0, ReminderEndHour: 24,
+				ReminderAfterDays: 10, ReminderStartHour: 0, ReminderEndHour: 24, SyncHour: 0,
 			},
 		},
 		{name: "missing database url", env: map[string]string{}, wantErr: true},
@@ -55,6 +56,8 @@ func TestLoad(t *testing.T) {
 		{name: "hours reversed", env: map[string]string{"JOBTRACK_DATABASE_URL": testURL, "JOBTRACK_REMINDER_HOURS": "21-9"}, wantErr: true},
 		{name: "hours past 24", env: map[string]string{"JOBTRACK_DATABASE_URL": testURL, "JOBTRACK_REMINDER_HOURS": "9-25"}, wantErr: true},
 		{name: "hours not a range", env: map[string]string{"JOBTRACK_DATABASE_URL": testURL, "JOBTRACK_REMINDER_HOURS": "9am"}, wantErr: true},
+		{name: "sync hour 24", env: map[string]string{"JOBTRACK_DATABASE_URL": testURL, "JOBTRACK_SYNC_HOUR": "24"}, wantErr: true},
+		{name: "sync hour not a number", env: map[string]string{"JOBTRACK_DATABASE_URL": testURL, "JOBTRACK_SYNC_HOUR": "6am"}, wantErr: true},
 	}
 
 	for _, tt := range tests {

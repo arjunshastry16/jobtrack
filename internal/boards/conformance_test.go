@@ -29,6 +29,19 @@ var implementations = []implementation{
 	{"workday", func(u string) boards.Board { return boards.NewWorkdayAt(u, nil) }, "examplecorp.wd1.myworkdayjobs.com/External"},
 }
 
+// All has a client for exactly the supported boards, each under its own name.
+func TestAllMatchesSupported(t *testing.T) {
+	all := boards.All(nil)
+	if len(all) != len(boards.Supported) {
+		t.Errorf("All has %d boards, Supported lists %d", len(all), len(boards.Supported))
+	}
+	for _, name := range boards.Supported {
+		if b, ok := all[name]; !ok || b.Name() != name {
+			t.Errorf("All()[%q] = %v", name, b)
+		}
+	}
+}
+
 // Every supported board has an implementation here, so none skips these checks.
 func TestEverySupportedBoardIsConformanceTested(t *testing.T) {
 	for _, name := range boards.Supported {

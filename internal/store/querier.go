@@ -64,6 +64,7 @@ type Querier interface {
 	ListApplications(ctx context.Context, arg ListApplicationsParams) ([]ListApplicationsRow, error)
 	ListCompanies(ctx context.Context, limit int32) ([]Company, error)
 	ListContacts(ctx context.Context, arg ListContactsParams) ([]Contact, error)
+	ListEnabledWatchIDs(ctx context.Context) ([]int64, error)
 	ListNotes(ctx context.Context, applicationID int64) ([]Note, error)
 	// ListStaleApplications finds open applications whose most recent stage change is older
 	// than cutoff: the ones where it's time to follow up. wishlist (not applied yet) and
@@ -75,6 +76,16 @@ type Querier interface {
 	// transaction ends, so two concurrent stage changes can't both start from the same status.
 	//
 	LockApplicationStatus(ctx context.Context, id int64) (string, error)
+	// MarkPostingsRemoved marks the watch's postings that the latest fetch didn't return.
+	// Run it in the same transaction as that fetch's upserts: now() is the transaction's
+	// start time, so every posting upserted in it has last_seen_at = now() exactly, and
+	// only the ones not seen this time are older.
+	//
+	MarkPostingsRemoved(ctx context.Context, watchID int64) (int64, error)
+	// RecordWatchCheck notes the outcome of a fetch on the watch: last_error is NULL when
+	// it succeeded. updated_at is left alone; it tracks changes to the watch's settings.
+	//
+	RecordWatchCheck(ctx context.Context, arg RecordWatchCheckParams) error
 	// RequeueExpiredJobs is the reaper: running jobs whose lease has passed (the worker
 	// crashed, was killed, or hung) go back to pending, or to dead if that was their last
 	// attempt. This is what makes delivery at-least-once.
@@ -90,6 +101,11 @@ type Querier interface {
 	UpdateContact(ctx context.Context, arg UpdateContactParams) (Contact, error)
 	UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, error)
 	UpdateWatch(ctx context.Context, arg UpdateWatchParams) (Watch, error)
+	// UpsertPosting records a posting a fetch found. New postings are inserted; known ones
+	// get their details refreshed, last_seen_at bumped and removed_at cleared. inserted
+	// tells the two apart: xmax is 0 only on a freshly inserted row version.
+	//
+	UpsertPosting(ctx context.Context, arg UpsertPostingParams) (UpsertPostingRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -82,6 +82,19 @@ type Note struct {
 	UpdatedAt     time.Time
 }
 
+type Posting struct {
+	ID          int64
+	WatchID     int64
+	ExternalID  string
+	Title       string
+	Location    string
+	Url         string
+	PublishedAt *time.Time
+	FirstSeenAt time.Time
+	LastSeenAt  time.Time
+	RemovedAt   *time.Time
+}
+
 type Watch struct {
 	ID            int64
 	CompanyID     int64

@@ -40,6 +40,19 @@ type Board interface {
 // Supported lists the board types that have a client, i.e. what a watch may use.
 var Supported = []string{"greenhouse", "lever", "ashby", "smartrecruiters", "workday"}
 
+// All returns a client for every supported board, keyed by name, all using client (nil
+// gets a default with a 30s timeout). Create it once and share it: the Workday client's
+// pacing only holds within one value.
+func All(client *http.Client) map[string]Board {
+	return map[string]Board{
+		"greenhouse":      NewGreenhouse(client),
+		"lever":           NewLever(client),
+		"ashby":           NewAshby(client),
+		"smartrecruiters": NewSmartRecruiters(client),
+		"workday":         NewWorkday(client),
+	}
+}
+
 // ErrBoardNotFound means the board has no company with that token (HTTP 404). It is not
 // worth retrying: the watch is misconfigured.
 var ErrBoardNotFound = errors.New("boards: no such company board")

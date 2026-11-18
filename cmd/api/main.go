@@ -15,9 +15,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/arjunshastry16/jobtrack/internal/boards"
 	"github.com/arjunshastry16/jobtrack/internal/config"
 	"github.com/arjunshastry16/jobtrack/internal/db"
 	"github.com/arjunshastry16/jobtrack/internal/httpapi"
+	"github.com/arjunshastry16/jobtrack/internal/ingest"
 	"github.com/arjunshastry16/jobtrack/internal/jobs"
 	"github.com/arjunshastry16/jobtrack/internal/notify"
 	"github.com/arjunshastry16/jobtrack/internal/reminders"
@@ -67,12 +69,20 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 
 	// Background work: a job worker, plus a scheduler that enqueues jobs.
 	queue := jobs.New(st)
-	worker := jobs.NewWorker(queue, logger, jobs.Config{})
+	worker := jobs.NewWorker(queue, logger, jobs.Config{
+		// Board fetches can take minutes (most of that waiting, politely), so there are
+		// enough slots that they don't hold up reminders.
+		Concurrency: 4,
+		// Jobs still running at shutdown get as long as HTTP requests do.
+		DrainTimeout: cfg.ShutdownTimeout,
+	})
 	rem := reminders.NewService(st, queue, notifier, logger, reminders.Config{
 		AfterDays: cfg.ReminderAfterDays, StartHour: cfg.ReminderStartHour, EndHour: cfg.ReminderEndHour,
 	})
 	rem.Register(worker)
-	sched := scheduler.New(logger, rem.ScanTask(time.Hour))
+	ing := ingest.NewService(st, queue, boards.All(nil), logger, ingest.Config{SyncHour: cfg.SyncHour})
+	ing.Register(worker)
+	sched := scheduler.New(logger, rem.ScanTask(time.Hour), ing.SyncTask(time.Hour))
 
 	// bgCtx is cancelled by shutdown (it derives from ctx) or, on an early error return,
 	// by the deferred stopBackground. Either way we wait for the worker to drain before
