@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/arjunshastry16/jobtrack/internal/pace"
 )
 
 // Workday reads a company's Workday careers site.
@@ -23,7 +25,7 @@ import (
 //	{"appliedFacets": {...}, "limit": 20, "offset": 0, "searchText": "..."}
 //
 // It may break whenever Workday changes its site, and it is deliberately polite:
-//   - One request at a time across every Workday site, at least wdMinGap apart.
+//   - One request at a time across every Workday site, at least wdMinGap apart (pace.Gate).
 //   - HTTP 429 is honoured: wait for Retry-After (a minute if absent, at most five) and try
 //     again, up to wdMaxAttempts in all; then give up until the next run.
 //   - It fetches only what the watch's URL is filtered to (e.g. one country). A site with
@@ -35,15 +37,11 @@ type Workday struct {
 	baseURL  string // "" means https://{host}; tests point every site at one server
 	client   *http.Client
 	now      func() time.Time
-	minGap   time.Duration
+	gate     *pace.Gate // one request at a time, wdMinGap apart
 	pageSize int
 	maxPages int
 	// How long to wait after a 429: the default when there's no Retry-After, and the cap.
 	retryDefault, retryCap time.Duration
-
-	// slot holds the one request in flight; last (guarded by slot) is when it ended.
-	slot chan struct{}
-	last time.Time
 }
 
 const (
@@ -61,9 +59,8 @@ func NewWorkday(client *http.Client) *Workday { return NewWorkdayAt("", client) 
 func NewWorkdayAt(baseURL string, client *http.Client) *Workday {
 	return &Workday{
 		baseURL: baseURL, client: defaultClient(client), now: time.Now,
-		minGap: wdMinGap, pageSize: wdPageSize, maxPages: wdMaxPages,
+		gate: pace.New(wdMinGap), pageSize: wdPageSize, maxPages: wdMaxPages,
 		retryDefault: time.Minute, retryCap: 5 * time.Minute,
-		slot: make(chan struct{}, 1),
 	}
 }
 
@@ -155,7 +152,7 @@ func (w *Workday) fetchPage(ctx context.Context, site WorkdaySite, offset int) (
 			if wait <= 0 {
 				wait = w.retryDefault
 			}
-			if err := sleepCtx(ctx, min(wait, w.retryCap)); err != nil {
+			if err := pace.Sleep(ctx, min(wait, w.retryCap)); err != nil {
 				return wdResponse{}, fmt.Errorf("boards: workday: waiting after 429: %w", err)
 			}
 			continue
@@ -164,23 +161,19 @@ func (w *Workday) fetchPage(ctx context.Context, site WorkdaySite, offset int) (
 	}
 }
 
-// post sends one request, waiting for its turn: one at a time, minGap apart.
-func (w *Workday) post(ctx context.Context, endpoint string, body []byte) (wdResponse, error) {
-	select {
-	case w.slot <- struct{}{}:
-	case <-ctx.Done():
-		return wdResponse{}, fmt.Errorf("boards: workday: %w", ctx.Err())
+// post sends one request when the gate gives it a turn.
+func (w *Workday) post(ctx context.Context, endpoint string, body []byte) (resp wdResponse, err error) {
+	gateErr := w.gate.Do(ctx, func() error {
+		resp, err = w.postNow(ctx, endpoint, body)
+		return nil
+	})
+	if gateErr != nil {
+		return wdResponse{}, fmt.Errorf("boards: workday: %w", gateErr)
 	}
-	defer func() {
-		w.last = time.Now()
-		<-w.slot
-	}()
-	if !w.last.IsZero() {
-		if err := sleepCtx(ctx, w.minGap-time.Since(w.last)); err != nil {
-			return wdResponse{}, fmt.Errorf("boards: workday: %w", err)
-		}
-	}
+	return resp, err
+}
 
+func (w *Workday) postNow(ctx context.Context, endpoint string, body []byte) (wdResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return wdResponse{}, fmt.Errorf("boards: workday: build request: %w", err)
@@ -230,19 +223,4 @@ func wdPostedOn(s string, now time.Time) time.Time {
 		return today.AddDate(0, 0, -n)
 	}
 	return time.Time{}
-}
-
-// sleepCtx waits for d, or until ctx ends.
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return ctx.Err()
-	}
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-t.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }

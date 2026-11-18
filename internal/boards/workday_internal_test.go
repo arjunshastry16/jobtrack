@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/arjunshastry16/jobtrack/internal/pace"
 )
 
 //go:embed testdata/workday_jobs.json
@@ -25,7 +27,7 @@ const wdTestSite = "https://examplecorp.wd1.myworkdayjobs.com/en-US/External?loc
 // fastWorkday is a Workday client pointed at srv with test-sized delays.
 func fastWorkday(srv *httptest.Server) *Workday {
 	w := NewWorkdayAt(srv.URL, nil)
-	w.minGap = 0
+	w.gate = pace.New(0)
 	w.retryDefault, w.retryCap = 10*time.Millisecond, 20*time.Millisecond
 	return w
 }
@@ -131,8 +133,9 @@ func newPagedServer(t *testing.T, n int) *pagedServer {
 func TestWorkdayPagesOneRequestAtATime(t *testing.T) {
 	ps := newPagedServer(t, 5)
 	wd := fastWorkday(ps.Server)
+	const gap = 30 * time.Millisecond
 	wd.pageSize = 2
-	wd.minGap = 30 * time.Millisecond
+	wd.gate = pace.New(gap)
 
 	// Two watches on the same client fetch at once; their requests must still be queued.
 	var wg sync.WaitGroup
@@ -154,8 +157,8 @@ func TestWorkdayPagesOneRequestAtATime(t *testing.T) {
 	}
 	slices.SortFunc(ps.starts, time.Time.Compare)
 	for i := 1; i < len(ps.starts); i++ {
-		if gap := ps.starts[i].Sub(ps.starts[i-1]); gap < wd.minGap {
-			t.Errorf("request %d started %s after the previous one, want >= %s", i, gap, wd.minGap)
+		if seen := ps.starts[i].Sub(ps.starts[i-1]); seen < gap {
+			t.Errorf("request %d started %s after the previous one, want >= %s", i, seen, gap)
 		}
 	}
 }
