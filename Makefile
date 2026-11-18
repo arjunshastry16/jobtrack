@@ -95,6 +95,10 @@ web-dev: ## Run the frontend dev server on 127.0.0.1:5173 (proxies the API; run 
 web-generate: ## Regenerate the frontend's API types from docs/openapi.yaml
 	cd web && npm run generate
 
+.PHONY: web-test
+web-test: ## Run the frontend's unit tests (Vitest)
+	cd web && npm test
+
 .PHONY: web-build
 web-build: ## Type-check and build the frontend into internal/webui/dist
 	cd web && npm run build

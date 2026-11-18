@@ -15,7 +15,9 @@ export type Schemas = components["schemas"];
 export function errorMessage(error: unknown, response?: Response): string {
   if (typeof error === "object" && error !== null && "error" in error) {
     const e = (error as Schemas["Error"]).error;
-    return e.message;
+    // Validation errors name the fields at fault, e.g. "role: is required".
+    const fields = Object.entries(e.fields ?? {}).map(([field, problem]) => `${field}: ${problem}`);
+    return fields.length > 0 ? `${e.message} (${fields.join("; ")})` : e.message;
   }
   if (error instanceof Error) {
     return error.message;

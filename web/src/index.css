@@ -2,23 +2,139 @@
   font-family: system-ui, sans-serif;
   line-height: 1.5;
   color-scheme: light dark;
+  --line: color-mix(in srgb, currentColor 15%, transparent);
+  --panel: color-mix(in srgb, currentColor 5%, transparent);
+  --accent: #2f6fde;
 }
 body {
-  margin: 0 auto;
-  max-width: 48rem;
+  margin: 0;
+}
+main {
   padding: 1rem;
+}
+.narrow {
+  max-width: 48rem;
+  margin: 0 auto;
 }
 .muted {
   opacity: 0.7;
 }
 .error {
-  color: #c62828;
+  color: #d32f2f;
 }
+
+/* Top bar */
+.topbar {
+  display: flex;
+  gap: 1.5rem;
+  align-items: baseline;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  font-weight: 700;
+}
+.topbar nav {
+  display: flex;
+  gap: 1rem;
+}
+.topbar nav a {
+  color: inherit;
+  text-decoration: none;
+}
+.topbar nav a.active {
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+}
+.version {
+  margin-left: auto;
+  font-size: 0.85rem;
+}
+
+/* Board */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+.page-head h1 {
+  margin: 0;
+}
+.board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(14rem, 1fr);
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding: 1rem 0;
+}
+.column {
+  background: var(--panel);
+  border: 2px solid transparent;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  min-height: 8rem;
+}
+.column h2 {
+  font-size: 0.95rem;
+  margin: 0.25rem 0.25rem 0.5rem;
+}
+.column .count {
+  opacity: 0.6;
+  font-weight: normal;
+}
+.column ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.column.droppable {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.column.over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.card {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--line);
+  background: Canvas;
+}
+.card[draggable="true"] {
+  cursor: grab;
+}
+.card select {
+  font-size: 0.85rem;
+}
+
+/* Add application */
+.add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+.add-form label {
+  display: grid;
+  font-size: 0.85rem;
+}
+.add-form .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* Postings */
 ul.postings {
   list-style: none;
   padding: 0;
 }
 ul.postings li {
   padding: 0.5rem 0;
-  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-bottom: 1px solid var(--line);
 }

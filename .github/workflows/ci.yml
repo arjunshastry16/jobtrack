@@ -64,6 +64,8 @@ jobs:
       # changed without regenerating, so the UI can't silently drift from the API.
       - name: API types up to date
         run: npm run generate && git diff --exit-code -- src/api/schema.d.ts
+      - name: Unit tests
+        run: npm test
       - name: Type-check and build
         run: npm run build
       # The build lands in internal/webui/dist; check the Go binary embeds it and that

@@ -72,6 +72,7 @@ make test         # unit + integration tests (integration tests use the dev Post
 make lint         # run linters
 make web-install  # frontend dependencies (exact locked versions, no install scripts)
 make web-dev      # frontend on 127.0.0.1:5173, proxying API calls to :8090
+make web-test     # frontend unit tests (Vitest)
 make build        # bin/jobtrack: one binary serving the API and the web app
 make help         # list all tasks
 ```
