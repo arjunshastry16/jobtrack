@@ -208,3 +208,33 @@ func TestDeletingApplicationRemovesTimeline(t *testing.T) {
 	// The company is deletable again: no application (or orphaned event) references it.
 	wantStatus(t, call(t, h, http.MethodDelete, pathFor(co), nil, nil), http.StatusNoContent)
 }
+
+// An application added after the fact can say when it really started; the timeline (and
+// so reminders and later backdated moves) count from then.
+func TestCreateBackdatedApplication(t *testing.T) {
+	t.Parallel()
+	h := newDBRouter(t)
+	co := mustCreateCompany(t, h, "Acme")
+	appliedOn := time.Now().Add(-10 * 24 * time.Hour).UTC().Truncate(time.Second)
+
+	app := mustCreateApplication(t, h, map[string]any{"company_id": co, "role": "SWE", "occurred_at": appliedOn})
+	tl := timeline(t, h, app.ID)
+	if len(tl.Events) != 1 || !tl.Events[0].OccurredAt.Equal(appliedOn) || tl.Events[0].ToStatus != "applied" {
+		t.Fatalf("timeline = %+v, want one 'applied' event at %v", tl.Events, appliedOn)
+	}
+
+	// A move between then and now is accepted; one before it isn't.
+	wantStatus(t, call(t, h, http.MethodPost, transitionPath(app.ID),
+		map[string]any{"to": "screening", "occurred_at": appliedOn.Add(-time.Hour)}, nil), http.StatusUnprocessableEntity)
+	wantStatus(t, call(t, h, http.MethodPost, transitionPath(app.ID),
+		map[string]any{"to": "screening", "occurred_at": appliedOn.Add(3 * 24 * time.Hour)}, nil), http.StatusCreated)
+
+	// Without a date it's now, as before; a future date is refused.
+	plain := mustCreateApplication(t, h, map[string]any{"company_id": co, "role": "SRE"})
+	if got := timeline(t, h, plain.ID).Events[0].OccurredAt; time.Since(got) > time.Minute {
+		t.Errorf("default occurred_at = %v, want about now", got)
+	}
+	wantStatus(t, call(t, h, http.MethodPost, "/api/v1/applications",
+		map[string]any{"company_id": co, "role": "PM", "occurred_at": time.Now().Add(24 * time.Hour)}, nil),
+		http.StatusUnprocessableEntity)
+}

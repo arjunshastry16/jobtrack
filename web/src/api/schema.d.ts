@@ -460,6 +460,13 @@ export interface components {
             salary_currency?: string | null;
             /** @description Initial status (default applied) */
             status?: components["schemas"]["Status"];
+            /**
+             * Format: date-time
+             * @description When the application reached its initial status (e.g. the day you applied), if
+             *     earlier than now. Starts the timeline, so follow-up reminders and later
+             *     backdated moves count from it. Must not be in the future. Default: now.
+             */
+            occurred_at?: string;
         };
         TransitionInput: {
             to: components["schemas"]["Status"];

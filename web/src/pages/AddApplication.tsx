@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { api, errorMessage, type Schemas } from "../api/client";
 import type { Application } from "../board";
+import { localDate, occurredAt } from "../detail";
 
 type Company = Schemas["Company"];
 
@@ -12,6 +13,7 @@ export default function AddApplication(props: { onAdded: (app: Application) => v
   const [companyName, setCompanyName] = useState("");
   const [role, setRole] = useState("");
   const [status, setStatus] = useState<"wishlist" | "applied">("applied");
+  const [date, setDate] = useState(""); // empty = today
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const listId = useId();
@@ -43,14 +45,18 @@ export default function AddApplication(props: { onAdded: (app: Application) => v
         company = created.data;
         setCompanies((cs) => [...cs, created.data]);
       }
+      // A date before today starts the timeline then, so reminders count from the day
+      // you actually applied.
+      const when = occurredAt(date, new Date());
       const { data, error, response } = await api.POST("/api/v1/applications", {
-        body: { company_id: company.id, role: role.trim(), status },
+        body: { company_id: company.id, role: role.trim(), status, ...(when ? { occurred_at: when } : {}) },
       });
       if (!data) {
         throw new Error(errorMessage(error, response));
       }
       props.onAdded(data);
       setRole("");
+      setDate("");
       setOpen(false);
     } catch (err) {
       setError(errorMessage(err));
@@ -87,6 +93,10 @@ export default function AddApplication(props: { onAdded: (app: Application) => v
           <option value="applied">Applied</option>
           <option value="wishlist">Wishlist</option>
         </select>
+      </label>
+      <label>
+        {status === "applied" ? "Applied on" : "Added on"}
+        <input type="date" value={date} max={localDate(new Date())} onChange={(e) => setDate(e.target.value)} />
       </label>
       <button type="submit" disabled={busy}>
         {busy ? "Adding…" : "Add"}

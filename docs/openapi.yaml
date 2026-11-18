@@ -829,6 +829,13 @@ components:
         status:
           allOf: [{ $ref: "#/components/schemas/Status" }]
           description: Initial status (default applied)
+        occurred_at:
+          type: string
+          format: date-time
+          description: |
+            When the application reached its initial status (e.g. the day you applied), if
+            earlier than now. Starts the timeline, so follow-up reminders and later
+            backdated moves count from it. Must not be in the future. Default: now.
 
     TransitionInput:
       type: object

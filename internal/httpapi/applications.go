@@ -81,6 +81,9 @@ type applicationFields struct {
 type applicationCreateInput struct {
 	applicationFields
 	Status *string `json:"status"`
+	// OccurredAt is when the application reached its initial status, e.g. the day you
+	// applied, if that was before you added it here. Default: now.
+	OccurredAt *time.Time `json:"occurred_at"`
 }
 
 // normalize trims and checks the fields, adding any problems to errs.
@@ -171,6 +174,9 @@ func (a *api) createApplication(w http.ResponseWriter, r *http.Request) {
 			errs["status"] = "must be one of: " + strings.Join(stages.All, ", ")
 		}
 	}
+	if in.OccurredAt != nil && in.OccurredAt.After(time.Now().Add(clockSkew)) {
+		errs["occurred_at"] = "must not be in the future"
+	}
 	if len(errs) > 0 {
 		writeValidationError(w, errs)
 		return
@@ -189,7 +195,10 @@ func (a *api) createApplication(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		_, err = q.CreateApplicationEvent(ctx, store.CreateApplicationEventParams{ApplicationID: id, ToStatus: status})
+		// The first event's time is what reminders and later backdated moves count from.
+		_, err = q.CreateApplicationEvent(ctx, store.CreateApplicationEventParams{
+			ApplicationID: id, ToStatus: status, OccurredAt: in.OccurredAt,
+		})
 		return err
 	})
 	if pgCode(err) == pgForeignKeyViolation {
