@@ -61,6 +61,21 @@ against it.
 | Stats | `GET /stats` (counts by stage, funnel, response rate, median/p90 days in each stage, where applications end; all SQL over the stage history) |
 | Health | `GET /healthz` (liveness), `GET /readyz` (database reachable) |
 
+### Access
+
+The app is only reachable over my tailnet. It listens on `127.0.0.1` behind
+`tailscale serve`, which passes each caller's Tailscale login in a header. A
+middleware lets in only logins on an allowlist (`JOBTRACK_ALLOWED_LOGINS`):
+
+- **No login:** 401. The request didn't come through serve, or came from a tagged
+  device.
+- **Any other login:** 403.
+- **Health probes:** stay open.
+
+It fails closed: the server won't start without an allowlist. Why this rather than
+passwords or OIDC, and what it trusts, is in
+[ADR 001](docs/adr/001-tailscale-identity-auth.md).
+
 ## Development
 
 Requires Go 1.27+, Docker, [golangci-lint](https://golangci-lint.run/) v2, and Node 22.12+

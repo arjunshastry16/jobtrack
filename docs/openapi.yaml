@@ -8,10 +8,18 @@ info:
     Every error has the same shape (`Error`): a stable machine-readable `code`, a
     human-readable `message`, and for validation errors a `fields` map.
 
+    Every endpoint except the health probes needs a Tailscale login: the app is reached
+    through `tailscale serve`, which passes the caller's login in `Tailscale-User-Login`.
+    Requests without one get 401, logins not on the allowlist 403. See
+    docs/adr/001-tailscale-identity-auth.md.
+
     This file is checked by tests: it must be valid OpenAPI, list exactly the routes the
     server registers, and every response produced by the integration tests must match it.
   license:
     name: MIT
+
+security:
+  - tailscale: []
 
 tags:
   - name: health
@@ -29,6 +37,7 @@ paths:
       tags: [health]
       summary: "Liveness: the process is up"
       operationId: healthz
+      security: [] # probes are open: deploy checks and monitors call them without a login
       responses:
         "200":
           description: Alive
@@ -41,6 +50,7 @@ paths:
       tags: [health]
       summary: "Readiness: the database is reachable"
       operationId: readyz
+      security: []
       responses:
         "200":
           description: Ready to serve traffic
@@ -64,6 +74,8 @@ paths:
           content:
             application/yaml:
               schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/v1/companies:
     get:
@@ -83,6 +95,8 @@ paths:
                   companies:
                     type: array
                     items: { $ref: "#/components/schemas/Company" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     post:
       tags: [companies]
@@ -105,6 +119,8 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/companies/{id}:
@@ -122,6 +138,8 @@ paths:
               schema: { $ref: "#/components/schemas/Company" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     put:
       tags: [companies]
@@ -143,6 +161,8 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     delete:
       tags: [companies]
@@ -153,6 +173,8 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/applications:
@@ -193,6 +215,8 @@ paths:
                     type: string
                     nullable: true
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     post:
       tags: [applications]
@@ -214,6 +238,8 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/applications/{id}:
@@ -231,6 +257,8 @@ paths:
               schema: { $ref: "#/components/schemas/Application" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     put:
       tags: [applications]
@@ -252,6 +280,8 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     delete:
       tags: [applications]
@@ -261,6 +291,8 @@ paths:
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/applications/{id}/transitions:
@@ -295,6 +327,8 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/applications/{id}/timeline:
@@ -321,6 +355,8 @@ paths:
                     items: { $ref: "#/components/schemas/Event" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/applications/{id}/contacts:
@@ -338,6 +374,8 @@ paths:
               schema: { $ref: "#/components/schemas/ContactList" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/applications/{id}/contacts/{contact_id}:
@@ -352,6 +390,8 @@ paths:
         "204": { description: Linked }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     delete:
       tags: [contacts]
@@ -361,6 +401,8 @@ paths:
         "204": { description: Unlinked }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/applications/{id}/notes:
@@ -385,6 +427,8 @@ paths:
                     items: { $ref: "#/components/schemas/Note" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     post:
       tags: [notes]
@@ -405,6 +449,8 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/contacts:
@@ -423,6 +469,8 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ContactList" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     post:
       tags: [contacts]
@@ -444,6 +492,8 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/contacts/{id}:
@@ -461,6 +511,8 @@ paths:
               schema: { $ref: "#/components/schemas/Contact" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     put:
       tags: [contacts]
@@ -481,6 +533,8 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     delete:
       tags: [contacts]
@@ -490,6 +544,8 @@ paths:
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/notes/{id}:
@@ -514,6 +570,8 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     delete:
       tags: [notes]
@@ -523,6 +581,8 @@ paths:
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/watches:
@@ -543,6 +603,8 @@ paths:
                   watches:
                     type: array
                     items: { $ref: "#/components/schemas/Watch" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     post:
       tags: [watches]
@@ -565,6 +627,8 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/watches/{id}:
@@ -582,6 +646,8 @@ paths:
               schema: { $ref: "#/components/schemas/Watch" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     put:
       tags: [watches]
@@ -603,6 +669,8 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/TooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     delete:
       tags: [watches]
@@ -612,6 +680,8 @@ paths:
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/postings:
@@ -656,6 +726,8 @@ paths:
                     type: string
                     nullable: true
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/postings/{id}/application:
@@ -684,6 +756,8 @@ paths:
               schema: { $ref: "#/components/schemas/Application" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/stats:
@@ -702,9 +776,21 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Stats" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
 components:
+  securitySchemes:
+    tailscale:
+      type: apiKey
+      in: header
+      name: Tailscale-User-Login
+      description: |
+        Set by `tailscale serve` to the caller's Tailscale login (e.g. you@github), after it
+        deletes any copy the caller sent. Not sent for tagged devices or Funnel traffic.
+        The app listens on loopback only, so requests can't skip tailscale serve.
+
   parameters:
     Id:
       name: id
@@ -748,6 +834,16 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    Unauthenticated:
+      description: No Tailscale login on the request (it didn't come through tailscale serve)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The Tailscale login isn't on the allowlist
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     Internal:
       description: Unexpected server error (details are logged, not returned)
       content:
@@ -768,7 +864,7 @@ components:
             code:
               type: string
               enum: [invalid_json, body_too_large, validation_failed, invalid_id, invalid_query,
-                     not_found, conflict, invalid_transition, internal]
+                     not_found, conflict, invalid_transition, internal, unauthenticated, forbidden]
             message: { type: string }
             fields:
               type: object

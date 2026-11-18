@@ -29,12 +29,13 @@ func newDBRouterAndStore(t *testing.T) (http.Handler, *store.Store) {
 	t.Helper()
 	pool := testdb.New(t)
 	st := store.NewStore(pool)
-	return contractChecked(t, NewRouter(Deps{
+	return contractChecked(t, viaServe(NewRouter(Deps{
 		Version: "test",
 		DB:      pool,
 		Store:   st,
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})), st
+		Auth:    testAuth,
+	}))), st
 }
 
 // call sends a JSON request and decodes a JSON response into out (if non-nil).

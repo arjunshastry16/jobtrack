@@ -19,11 +19,12 @@ type fakeDB struct{ err error }
 func (f fakeDB) Ping(context.Context) error { return f.err }
 
 func newTestRouter(db Pinger) http.Handler {
-	return NewRouter(Deps{
+	return viaServe(NewRouter(Deps{
 		Version: "test-version",
 		DB:      db,
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
+		Auth:    testAuth,
+	}))
 }
 
 // do sends a request through the router and returns the recorded response.
@@ -96,10 +97,10 @@ func TestReadyz(t *testing.T) {
 // The web app and the API share one server: app pages get index.html, API paths never do.
 func TestRouterServesTheWebApp(t *testing.T) {
 	const index = "<!doctype html><title>jobtrack</title>"
-	h := NewRouter(Deps{
+	h := viaServe(NewRouter(Deps{
 		Version: "test", DB: fakeDB{}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		UI: fstest.MapFS{"index.html": {Data: []byte(index)}},
-	})
+		UI: fstest.MapFS{"index.html": {Data: []byte(index)}}, Auth: testAuth,
+	}))
 
 	for _, path := range []string{"/", "/applications/12", "/postings"} {
 		if rec := do(t, h, http.MethodGet, path); rec.Code != http.StatusOK || rec.Body.String() != index {

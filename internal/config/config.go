@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,14 @@ type Config struct {
 	// SyncHour is the local hour (0-23) from which watched job boards are fetched each
 	// day; the fetch happens once a day, in the first hourly check at or after it.
 	SyncHour int
+
+	// AllowedLogins are the Tailscale logins (lower case, e.g. "you@github") allowed to
+	// use the app; tailscale serve passes the caller's login in a header. Required unless
+	// AuthOff. Configured as a comma-separated JOBTRACK_ALLOWED_LOGINS.
+	AllowedLogins []string
+	// AuthOff lets every request through without a login (JOBTRACK_AUTH=off). For local
+	// development only, so it's refused unless Addr is a loopback address.
+	AuthOff bool
 }
 
 // Defaults are safe for local development on the Pi: the server only listens on loopback.
@@ -111,7 +120,58 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.SyncHour = n
 	}
 
+	if err := loadAuth(&cfg, getenv); err != nil {
+		return Config{}, err
+	}
+
 	return cfg, nil
+}
+
+// loadAuth reads who may use the app. It fails closed: no allowlist is an error, not
+// "anyone".
+func loadAuth(cfg *Config, getenv func(string) string) error {
+	switch mode := getenv("JOBTRACK_AUTH"); mode {
+	case "", "tailscale":
+	case "off":
+		if !isLoopback(cfg.Addr) {
+			return fmt.Errorf("JOBTRACK_AUTH=off is only allowed on a loopback address, but JOBTRACK_ADDR is %q", cfg.Addr)
+		}
+		cfg.AuthOff = true
+		return nil
+	default:
+		return fmt.Errorf(`JOBTRACK_AUTH: want "tailscale" or "off", got %q`, mode)
+	}
+
+	for l := range strings.SplitSeq(getenv("JOBTRACK_ALLOWED_LOGINS"), ",") {
+		l = strings.ToLower(strings.TrimSpace(l))
+		if l == "" {
+			continue
+		}
+		// Tailscale logins always have an @ (you@github, you@example.com); a display
+		// name here would never match, so it's caught now rather than as a 403 later.
+		if !strings.Contains(l, "@") || strings.ContainsAny(l, " \t") {
+			return fmt.Errorf("JOBTRACK_ALLOWED_LOGINS: %q doesn't look like a Tailscale login (e.g. you@github)", l)
+		}
+		cfg.AllowedLogins = append(cfg.AllowedLogins, l)
+	}
+	if len(cfg.AllowedLogins) == 0 {
+		return errors.New("JOBTRACK_ALLOWED_LOGINS is required: the Tailscale logins allowed to use the app " +
+			"(or JOBTRACK_AUTH=off for local development)")
+	}
+	return nil
+}
+
+// isLoopback reports whether addr (host:port) only listens on this machine.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // parseHours parses "START-END" with 0 <= START < END <= 24.

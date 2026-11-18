@@ -16,10 +16,11 @@ import (
 //
 // The chain (outermost first) is built in NewRouter:
 //
-//	withRequestID -> withTimeout -> accessLog -> recoverPanics -> ServeMux
+//	withRequestID -> withTimeout -> accessLog -> recoverPanics -> requireLogin -> ServeMux
 //
 // Order matters: the request ID must exist before anything logs; accessLog must sit
-// outside recoverPanics so it logs the 500 a panic turns into; and nothing between
+// outside recoverPanics so it logs the 500 a panic turns into, and outside requireLogin
+// so refused requests are logged too; and nothing between
 // accessLog and the ServeMux may copy the request, because ServeMux records the
 // matched route pattern (r.Pattern) on the *http.Request it receives.
 
@@ -98,6 +99,8 @@ func accessLog(logger *slog.Logger, next http.Handler) http.Handler {
 		}
 		logger.LogAttrs(r.Context(), level, "http request",
 			slog.String("method", r.Method),
+			// Who asked (the Tailscale login, "" without one); refused requests included.
+			slog.String("user", tailscaleLogin(r)),
 			slog.String("path", r.URL.Path), // no query string: it may hold personal data
 			slog.String("route", r.Pattern), // e.g. "GET /api/v1/companies/{id}": low-cardinality, good for grouping
 			slog.Int("status", status),

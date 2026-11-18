@@ -57,8 +57,9 @@ func TestRunServesAndShutsDown(t *testing.T) {
 	defer cancel()
 
 	env := map[string]string{
-		"JOBTRACK_ADDR":         "127.0.0.1:0", // port 0: the OS picks a free port
-		"JOBTRACK_DATABASE_URL": unreachableDB(t),
+		"JOBTRACK_ADDR":           "127.0.0.1:0", // port 0: the OS picks a free port
+		"JOBTRACK_DATABASE_URL":   unreachableDB(t),
+		"JOBTRACK_ALLOWED_LOGINS": "me@github",
 	}
 	logs := &syncBuffer{}
 
@@ -72,6 +73,10 @@ func TestRunServesAndShutsDown(t *testing.T) {
 	}
 	if got := getStatus(t, "http://"+addr+"/readyz"); got != http.StatusServiceUnavailable {
 		t.Fatalf("GET /readyz status = %d, want 503 with the database down", got)
+	}
+	// Everything else needs the Tailscale login that tailscale serve would add.
+	if got := getStatus(t, "http://"+addr+"/api/v1/openapi.yaml"); got != http.StatusUnauthorized {
+		t.Fatalf("GET /api/v1/openapi.yaml without a login = %d, want 401", got)
 	}
 
 	cancel()
@@ -112,10 +117,15 @@ func getStatus(t *testing.T, url string) int {
 }
 
 func TestRunRejectsBadConfig(t *testing.T) {
-	env := map[string]string{"JOBTRACK_DATABASE_URL": unreachableDB(t), "JOBTRACK_LOG_LEVEL": "loud"}
-	err := run(context.Background(), func(k string) string { return env[k] }, &syncBuffer{})
-	if err == nil {
-		t.Fatal("run() = nil, want a config error")
+	for name, env := range map[string]map[string]string{
+		"bad log level": {"JOBTRACK_DATABASE_URL": unreachableDB(t), "JOBTRACK_LOG_LEVEL": "loud", "JOBTRACK_ALLOWED_LOGINS": "me@github"},
+		// No allowlist must stop the server, not open it to everyone.
+		"no allowed logins": {"JOBTRACK_DATABASE_URL": unreachableDB(t)},
+	} {
+		err := run(context.Background(), func(k string) string { return env[k] }, &syncBuffer{})
+		if err == nil {
+			t.Errorf("%s: run() = nil, want a config error", name)
+		}
 	}
 }
 

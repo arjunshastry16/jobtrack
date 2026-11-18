@@ -97,8 +97,14 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	background.Go(func() { worker.Run(bgCtx) })
 	background.Go(func() { sched.Run(bgCtx) })
 
+	if cfg.AuthOff {
+		logger.Warn("JOBTRACK_AUTH=off: every request is let in without a Tailscale login (local development only)")
+	}
 	srv := &http.Server{
-		Handler: httpapi.NewRouter(httpapi.Deps{Version: version, DB: pool, Store: st, Logger: logger, UI: webui.Files()}),
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			Version: version, DB: pool, Store: st, Logger: logger, UI: webui.Files(),
+			Auth: httpapi.Auth{Logins: cfg.AllowedLogins, Off: cfg.AuthOff},
+		}),
 		// Timeouts stop slow or stuck clients from holding connections open forever.
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

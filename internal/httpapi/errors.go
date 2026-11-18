@@ -34,6 +34,8 @@ const (
 	codeConflict          = "conflict"
 	codeInvalidTransition = "invalid_transition"
 	codeInternal          = "internal"
+	codeUnauthenticated   = "unauthenticated"
+	codeForbidden         = "forbidden"
 )
 
 // Postgres SQLSTATE codes the API maps to client errors.

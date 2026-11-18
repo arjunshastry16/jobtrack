@@ -101,7 +101,7 @@ func TestRequestIDHeader(t *testing.T) {
 
 func TestAccessLog(t *testing.T) {
 	logger, logs := newCapturingLogger()
-	h := NewRouter(Deps{Version: "v", DB: fakeDB{}, Logger: logger})
+	h := viaServe(NewRouter(Deps{Version: "v", DB: fakeDB{}, Logger: logger, Auth: testAuth}))
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/companies/abc?q=secret", nil)
 	rec := httptest.NewRecorder()
@@ -118,6 +118,7 @@ func TestAccessLog(t *testing.T) {
 		"route":      "GET /api/v1/companies/{id}",
 		"status":     float64(http.StatusBadRequest), // JSON numbers decode as float64
 		"request_id": rec.Header().Get(requestid.Header),
+		"user":       testLogin,
 	}
 	for k, v := range want {
 		if line[k] != v {
@@ -134,7 +135,7 @@ func TestAccessLog(t *testing.T) {
 
 func TestAccessLogProbesAtDebug(t *testing.T) {
 	logger, logs := newCapturingLogger()
-	h := NewRouter(Deps{Version: "v", DB: fakeDB{}, Logger: logger})
+	h := NewRouter(Deps{Version: "v", DB: fakeDB{}, Logger: logger, Auth: testAuth})
 
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil))
 

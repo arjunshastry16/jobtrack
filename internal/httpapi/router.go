@@ -31,6 +31,8 @@ type Deps struct {
 	RequestTimeout time.Duration
 	// UI is the built frontend (webui.Files()); nil serves a note that it isn't included.
 	UI fs.FS
+	// Auth says who may use the app; the zero value refuses everyone but health probes.
+	Auth Auth
 }
 
 // defaultRequestTimeout is below the server's 15s WriteTimeout, so a slow handler gets
@@ -120,7 +122,8 @@ func NewRouter(d Deps) http.Handler {
 	return withRequestID(
 		withTimeout(timeout,
 			accessLog(d.Logger,
-				recoverPanics(d.Logger, mux))))
+				recoverPanics(d.Logger,
+					requireLogin(d.Auth, mux)))))
 }
 
 func appOrAPINotFound(app http.Handler) http.Handler {
