@@ -8,7 +8,10 @@
 #
 # Every service is capped (memory, CPU, processes) so it can't starve Nextcloud and the
 # rest, and keeps at most 30 MB of logs.
-name: jobtrack
+#
+# JOBTRACK_PROJECT and JOBTRACK_PORT exist so a test stack (scripts/test-deploy.sh) can
+# run beside production; production leaves them unset.
+name: ${JOBTRACK_PROJECT:-jobtrack}
 
 x-logging: &logging
   driver: json-file
@@ -90,7 +93,7 @@ services:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:8090:8090"
+      - "127.0.0.1:${JOBTRACK_PORT:-8090}:8090"
     # backend reaches the database; egress reaches the job boards and ntfy.
     networks: [backend, egress]
     healthcheck:

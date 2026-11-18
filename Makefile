@@ -69,6 +69,10 @@ build: web-build ## Build bin/jobtrack: the API with the web UI embedded (needs 
 image: ## Build the container image jobtrack:local for this machine's platform
 	docker build --build-arg VERSION=$(VERSION) -t jobtrack:local .
 
+.PHONY: test-deploy
+test-deploy: ## Test deploy/deploy.sh (deploy, rollback, skip, lock) on a throwaway stack and registry
+	scripts/test-deploy.sh
+
 .PHONY: test
 test: ## Run all tests (with the race detector where supported)
 	go test $(RACE_FLAG) -count=1 ./...
@@ -85,7 +89,7 @@ SHELLCHECK_IMAGE := koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6fe
 .PHONY: lint-ops
 lint-ops: ## Lint GitHub workflows, shell scripts and the production compose file
 	docker run --rm --volume "$(CURDIR):/repo:ro" --workdir /repo $(ACTIONLINT_IMAGE) -no-color
-	docker run --rm --volume "$(CURDIR):/repo:ro" --workdir /repo $(SHELLCHECK_IMAGE) scripts/*.sh
+	docker run --rm --volume "$(CURDIR):/repo:ro" --workdir /repo $(SHELLCHECK_IMAGE) scripts/*.sh deploy/*.sh
 	JOBTRACK_IMAGE=check JOBTRACK_DB_PASSWORD=check JOBTRACK_ALLOWED_LOGINS=check@example \
 		docker compose --file deploy/compose.yml --env-file /dev/null config --quiet
 

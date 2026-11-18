@@ -57,6 +57,34 @@ All containers have read-only filesystems, drop all Linux capabilities, and keep
 30 MB of logs. `tailscale serve --https=9443` puts the app on the tailnet and adds the
 caller's login. The image is pinned by digest in `.env`.
 
+### Deploys
+
+The Pi pulls; nothing pushes to it, so CI never holds credentials for it.
+[`deploy/deploy.sh`](deploy/deploy.sh) runs from cron every 2 minutes and asks GHCR
+which digest `:main` points at. If that differs from `.env`, it:
+
+1. pulls the image and pins it in `.env`;
+2. runs `docker compose up -d --wait`, so migrations must succeed and the API must turn
+   healthy;
+3. checks from the host, on the published port, that `/readyz` answers 200 from the new
+   image.
+
+If any of that fails, it puts the previous image back, brings it up, and checks it the
+same way. Every deploy and rollback goes to ntfy and `deploys.log`.
+
+A failed digest isn't retried every 2 minutes: the next push is tried as normal, and
+`deploy.sh --force` retries the failed one. A lock stops runs from overlapping, and only
+the current and previous images are kept.
+
+[`scripts/test-deploy.sh`](scripts/test-deploy.sh) (`make test-deploy`) runs `deploy.sh`
+against a throwaway stack and a local registry. It checks:
+
+- a deploy, and a no-op when nothing changed;
+- a rollback from a build whose migrations fail;
+- a rollback from a build that is healthy inside its container but unreachable on the
+  published port;
+- that a failed build is skipped, `--force`, the lock, and a revert.
+
 ## API
 
 REST + JSON under `/api/v1`, described in [`docs/openapi.yaml`](docs/openapi.yaml) (also served at
@@ -106,7 +134,8 @@ make web-dev      # frontend on 127.0.0.1:5173, proxying API calls to :8091
 make web-test     # frontend unit tests (Vitest)
 make build        # bin/jobtrack: one binary serving the API and the web app
 make image        # the container image (jobtrack:local)
-make lint-ops     # lint the GitHub workflows and shell scripts (actionlint, shellcheck)
+make lint-ops     # lint the GitHub workflows, shell scripts and production compose file
+make test-deploy  # test the deploy script, rollbacks included, on a throwaway stack
 make help         # list all tasks
 ```
 
