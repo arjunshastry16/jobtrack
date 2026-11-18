@@ -24,3 +24,19 @@ export function errorMessage(error: unknown, response?: Response): string {
   }
   return response ? `HTTP ${response.status}` : "request failed";
 }
+
+// must returns a call's response body, or throws with the API's error message. For
+// calls that return a body (200/201).
+export function must<T>(result: { data?: T; error?: unknown; response: Response }): T {
+  if (result.data === undefined) {
+    throw new Error(errorMessage(result.error, result.response));
+  }
+  return result.data;
+}
+
+// mustSucceed throws unless the call succeeded. For calls with no body (204).
+export function mustSucceed(result: { error?: unknown; response: Response }): void {
+  if (!result.response.ok) {
+    throw new Error(errorMessage(result.error, result.response));
+  }
+}

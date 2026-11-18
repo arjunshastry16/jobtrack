@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router";
 import { api } from "./api/client";
+import ApplicationPage from "./pages/application/ApplicationPage";
 import Board from "./pages/Board";
 import NotFound from "./pages/NotFound";
 import Postings from "./pages/Postings";
@@ -23,6 +24,7 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={<Board />} />
+          <Route path="/applications/:id" element={<ApplicationPage />} />
           <Route path="/postings" element={<Postings />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

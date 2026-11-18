@@ -138,3 +138,101 @@ ul.postings li {
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--line);
 }
+
+/* Board cards link to their detail page */
+.card-title {
+  font-weight: 600;
+  color: inherit;
+}
+
+/* Application detail */
+.detail section {
+  border-top: 1px solid var(--line);
+  padding: 0.5rem 0 1rem;
+}
+.detail header h1 {
+  margin-bottom: 0;
+}
+.badge {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  font-size: 0.85rem;
+}
+.badge.stage-rejected,
+.badge.stage-withdrawn {
+  background: var(--panel);
+}
+.badge.stage-offer,
+.badge.stage-accepted {
+  background: color-mix(in srgb, #2e7d32 25%, transparent);
+}
+dl.fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+dl.fields dt {
+  opacity: 0.7;
+}
+dl.fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+form.stacked {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 36rem;
+}
+form.stacked label {
+  display: grid;
+  font-size: 0.85rem;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+ol.timeline,
+ul.notes,
+ul.contacts {
+  list-style: none;
+  padding: 0;
+}
+ol.timeline li,
+ul.notes li,
+ul.contacts li {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+}
+ol.timeline time {
+  display: inline-block;
+  min-width: 7rem;
+  opacity: 0.7;
+}
+ol.timeline p,
+ul.notes p {
+  margin: 0.2rem 0;
+}
+.note-body {
+  white-space: pre-wrap;
+}
+.small {
+  font-size: 0.85rem;
+}
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+}
+.danger {
+  margin-top: 1rem;
+}
+.danger button {
+  color: #d32f2f;
+}

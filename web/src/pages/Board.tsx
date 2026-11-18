@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { Link } from "react-router";
 import { api, errorMessage } from "../api/client";
 import { canDrop, groupByStage, moveLabel, moveLocally, replace, type Application } from "../board";
 import { STAGE_LABELS, STAGES, type Status } from "../stages";
@@ -169,7 +170,10 @@ function Card(props: {
       }}
       onDragEnd={props.onDragEnd}
     >
-      <strong>{app.role}</strong>
+      {/* draggable={false}: dragging the card, not the link's URL */}
+      <Link to={`/applications/${app.id}`} draggable={false} className="card-title">
+        {app.role}
+      </Link>
       <span className="muted">
         {app.company_name}
         {app.location ? ` · ${app.location}` : ""}
