@@ -46,3 +46,23 @@ WHERE id = $1;
 -- name: DeleteApplication :execrows
 DELETE FROM applications
 WHERE id = $1;
+
+-- CreateApplicationFromPosting saves a posting as a wishlist application, filled in
+-- from the posting: its title as the role (cut to the role's 200-character limit), its
+-- link, its location and the board it came from. It returns no row if the posting doesn't
+-- exist or is already saved (ON CONFLICT DO NOTHING on the unique posting_id; a
+-- concurrent save of the same posting waits for the first and then also does nothing).
+--
+-- name: CreateApplicationFromPosting :one
+INSERT INTO applications (company_id, role, job_url, source, location, status, posting_id)
+SELECT w.company_id, btrim(left(p.title, 200)), p.url, w.board,
+       nullif(btrim(left(p.location, 200)), ''), 'wishlist', p.id
+FROM postings p
+JOIN watches w ON w.id = p.watch_id
+WHERE p.id = $1
+ON CONFLICT (posting_id) DO NOTHING
+RETURNING id;
+
+-- name: GetApplicationIDByPosting :one
+SELECT id FROM applications
+WHERE posting_id = sqlc.arg(posting_id)::bigint;

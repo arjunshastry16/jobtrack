@@ -48,6 +48,29 @@ func (q *Queries) CreateApplication(ctx context.Context, arg CreateApplicationPa
 	return id, err
 }
 
+const createApplicationFromPosting = `-- name: CreateApplicationFromPosting :one
+INSERT INTO applications (company_id, role, job_url, source, location, status, posting_id)
+SELECT w.company_id, btrim(left(p.title, 200)), p.url, w.board,
+       nullif(btrim(left(p.location, 200)), ''), 'wishlist', p.id
+FROM postings p
+JOIN watches w ON w.id = p.watch_id
+WHERE p.id = $1
+ON CONFLICT (posting_id) DO NOTHING
+RETURNING id
+`
+
+// CreateApplicationFromPosting saves a posting as a wishlist application, filled in
+// from the posting: its title as the role (cut to the role's 200-character limit), its
+// link, its location and the board it came from. It returns no row if the posting doesn't
+// exist or is already saved (ON CONFLICT DO NOTHING on the unique posting_id; a
+// concurrent save of the same posting waits for the first and then also does nothing).
+func (q *Queries) CreateApplicationFromPosting(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, createApplicationFromPosting, id)
+	var id_2 int64
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const deleteApplication = `-- name: DeleteApplication :execrows
 DELETE FROM applications
 WHERE id = $1
@@ -62,7 +85,7 @@ func (q *Queries) DeleteApplication(ctx context.Context, id int64) (int64, error
 }
 
 const getApplication = `-- name: GetApplication :one
-SELECT a.id, a.company_id, a.role, a.job_url, a.source, a.location, a.salary_min, a.salary_max, a.salary_currency, a.status, a.created_at, a.updated_at, c.name AS company_name
+SELECT a.id, a.company_id, a.role, a.job_url, a.source, a.location, a.salary_min, a.salary_max, a.salary_currency, a.status, a.created_at, a.updated_at, a.posting_id, c.name AS company_name
 FROM applications a
 JOIN companies c ON c.id = a.company_id
 WHERE a.id = $1
@@ -89,13 +112,26 @@ func (q *Queries) GetApplication(ctx context.Context, id int64) (GetApplicationR
 		&i.Application.Status,
 		&i.Application.CreatedAt,
 		&i.Application.UpdatedAt,
+		&i.Application.PostingID,
 		&i.CompanyName,
 	)
 	return i, err
 }
 
+const getApplicationIDByPosting = `-- name: GetApplicationIDByPosting :one
+SELECT id FROM applications
+WHERE posting_id = $1::bigint
+`
+
+func (q *Queries) GetApplicationIDByPosting(ctx context.Context, postingID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, getApplicationIDByPosting, postingID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const listApplications = `-- name: ListApplications :many
-SELECT a.id, a.company_id, a.role, a.job_url, a.source, a.location, a.salary_min, a.salary_max, a.salary_currency, a.status, a.created_at, a.updated_at, c.name AS company_name
+SELECT a.id, a.company_id, a.role, a.job_url, a.source, a.location, a.salary_min, a.salary_max, a.salary_currency, a.status, a.created_at, a.updated_at, a.posting_id, c.name AS company_name
 FROM applications a
 JOIN companies c ON c.id = a.company_id
 WHERE ($1::text IS NULL OR a.status = $1::text)
@@ -147,6 +183,7 @@ func (q *Queries) ListApplications(ctx context.Context, arg ListApplicationsPara
 			&i.Application.Status,
 			&i.Application.CreatedAt,
 			&i.Application.UpdatedAt,
+			&i.Application.PostingID,
 			&i.CompanyName,
 		); err != nil {
 			return nil, err

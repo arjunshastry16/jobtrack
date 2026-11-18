@@ -91,6 +91,7 @@ func routes(a *api, d Deps) []route {
 		{"DELETE", "/api/v1/watches/{id}", a.deleteWatch},
 
 		{"GET", "/api/v1/postings", a.listPostings},
+		{"POST", "/api/v1/postings/{id}/application", a.savePosting},
 	}
 }
 

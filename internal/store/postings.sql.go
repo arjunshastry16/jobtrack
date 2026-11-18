@@ -38,10 +38,12 @@ func (q *Queries) ListEnabledWatchIDs(ctx context.Context) ([]int64, error) {
 
 const listPostings = `-- name: ListPostings :many
 SELECT p.id, p.watch_id, w.company_id, c.name AS company_name, w.board,
-       p.title, p.location, p.url, p.published_at, p.first_seen_at, p.last_seen_at, p.removed_at
+       p.title, p.location, p.url, p.published_at, p.first_seen_at, p.last_seen_at, p.removed_at,
+       a.id AS application_id
 FROM postings p
 JOIN watches w ON w.id = p.watch_id
 JOIN companies c ON c.id = w.company_id
+LEFT JOIN applications a ON a.posting_id = p.id  -- at most one: posting_id is unique
 WHERE ($1::bigint IS NULL OR p.watch_id = $1::bigint)
   AND ($2::bigint IS NULL OR w.company_id = $2::bigint)
   AND ($3::boolean OR p.removed_at IS NULL)
@@ -59,22 +61,23 @@ type ListPostingsParams struct {
 }
 
 type ListPostingsRow struct {
-	ID          int64
-	WatchID     int64
-	CompanyID   int64
-	CompanyName string
-	Board       string
-	Title       string
-	Location    string
-	Url         string
-	PublishedAt *time.Time
-	FirstSeenAt time.Time
-	LastSeenAt  time.Time
-	RemovedAt   *time.Time
+	ID            int64
+	WatchID       int64
+	CompanyID     int64
+	CompanyName   string
+	Board         string
+	Title         string
+	Location      string
+	Url           string
+	PublishedAt   *time.Time
+	FirstSeenAt   time.Time
+	LastSeenAt    time.Time
+	RemovedAt     *time.Time
+	ApplicationID *int64
 }
 
 // ListPostings is the inbox: postings newest first, with their watch's company and
-// board. Removed postings are left out unless include_removed is set. Keyset
+// board, and the application saved from each (if any). Removed postings are left out unless include_removed is set. Keyset
 // pagination as in ListApplications: before_id is the last id of the previous page.
 func (q *Queries) ListPostings(ctx context.Context, arg ListPostingsParams) ([]ListPostingsRow, error) {
 	rows, err := q.db.Query(ctx, listPostings,
@@ -104,6 +107,7 @@ func (q *Queries) ListPostings(ctx context.Context, arg ListPostingsParams) ([]L
 			&i.FirstSeenAt,
 			&i.LastSeenAt,
 			&i.RemovedAt,
+			&i.ApplicationID,
 		); err != nil {
 			return nil, err
 		}

@@ -1,13 +1,18 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
+	"github.com/arjunshastry16/jobtrack/internal/stages"
 	"github.com/arjunshastry16/jobtrack/internal/store"
+	"github.com/jackc/pgx/v5"
 )
+
+const msgPostingNotFound = "posting not found"
 
 // postingJSON is a job posting found by a watch.
 type postingJSON struct {
@@ -23,6 +28,8 @@ type postingJSON struct {
 	FirstSeenAt time.Time  `json:"first_seen_at"`
 	LastSeenAt  time.Time  `json:"last_seen_at"`
 	RemovedAt   *time.Time `json:"removed_at"`
+	// ApplicationID is the application saved from this posting, if any.
+	ApplicationID *int64 `json:"application_id"`
 }
 
 func toPostingJSON(p store.ListPostingsRow) postingJSON {
@@ -30,6 +37,7 @@ func toPostingJSON(p store.ListPostingsRow) postingJSON {
 		ID: p.ID, WatchID: p.WatchID, CompanyID: p.CompanyID, CompanyName: p.CompanyName, Board: p.Board,
 		Title: p.Title, Location: p.Location, URL: p.Url, PublishedAt: p.PublishedAt,
 		FirstSeenAt: p.FirstSeenAt, LastSeenAt: p.LastSeenAt, RemovedAt: p.RemovedAt,
+		ApplicationID: p.ApplicationID,
 	}
 }
 
@@ -84,6 +92,54 @@ func (a *api) listPostings(w http.ResponseWriter, r *http.Request) {
 		out = append(out, toPostingJSON(row))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"postings": out, "next_cursor": next})
+}
+
+// savePosting turns a posting into a wishlist application, filled in from the posting.
+// Saving is idempotent: a posting already saved answers 200 with its application instead
+// of creating a second one (201), so a double click or a retried request is harmless.
+//
+//	POST /api/v1/postings/{id}/application
+func (a *api) savePosting(w http.ResponseWriter, r *http.Request) {
+	postingID, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	var appID int64
+	created := false
+	// The application and its first history event are saved together or not at all.
+	err := a.store.InTx(ctx, func(q store.Querier) error {
+		id, err := q.CreateApplicationFromPosting(ctx, postingID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Already saved, or no such posting (then this is ErrNoRows too: a 404).
+			appID, err = q.GetApplicationIDByPosting(ctx, postingID)
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		appID, created = id, true
+		_, err = q.CreateApplicationEvent(ctx, store.CreateApplicationEventParams{
+			ApplicationID: id, ToStatus: stages.Wishlist,
+		})
+		return err
+	})
+	if err != nil {
+		a.storeError(w, r, err, msgPostingNotFound, "")
+		return
+	}
+
+	row, err := a.store.GetApplication(ctx, appID)
+	if err != nil {
+		a.internalError(w, r, err)
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+		w.Header().Set("Location", "/api/v1/applications/"+strconv.FormatInt(appID, 10))
+	}
+	writeJSON(w, status, toApplicationJSON(row.Application, row.CompanyName))
 }
 
 // queryID reads an optional positive id from the query string. A bad value is noted in

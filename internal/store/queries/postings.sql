@@ -38,15 +38,17 @@ SET last_checked_at = now(), last_error = sqlc.narg(last_error)
 WHERE id = $1;
 
 -- ListPostings is the inbox: postings newest first, with their watch's company and
--- board. Removed postings are left out unless include_removed is set. Keyset
+-- board, and the application saved from each (if any). Removed postings are left out unless include_removed is set. Keyset
 -- pagination as in ListApplications: before_id is the last id of the previous page.
 --
 -- name: ListPostings :many
 SELECT p.id, p.watch_id, w.company_id, c.name AS company_name, w.board,
-       p.title, p.location, p.url, p.published_at, p.first_seen_at, p.last_seen_at, p.removed_at
+       p.title, p.location, p.url, p.published_at, p.first_seen_at, p.last_seen_at, p.removed_at,
+       a.id AS application_id
 FROM postings p
 JOIN watches w ON w.id = p.watch_id
 JOIN companies c ON c.id = w.company_id
+LEFT JOIN applications a ON a.posting_id = p.id  -- at most one: posting_id is unique
 WHERE (sqlc.narg(watch_id)::bigint IS NULL OR p.watch_id = sqlc.narg(watch_id)::bigint)
   AND (sqlc.narg(company_id)::bigint IS NULL OR w.company_id = sqlc.narg(company_id)::bigint)
   AND (sqlc.arg(include_removed)::boolean OR p.removed_at IS NULL)

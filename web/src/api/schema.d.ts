@@ -362,6 +362,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/postings/{id}/application": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a posting as a wishlist application
+         * @description Creates an application on the wishlist, filled in from the posting: its title as the
+         *     role, its link, location and board. Idempotent: a posting that's already saved
+         *     answers 200 with its application rather than creating another.
+         */
+        post: operations["savePosting"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -595,6 +619,11 @@ export interface components {
              * @description Set when a fetch stopped returning the posting; null while it's listed.
              */
             removed_at: string | null;
+            /**
+             * Format: int64
+             * @description The application saved from this posting, if it has been saved.
+             */
+            application_id: number | null;
         };
         WatchInput: {
             /** Format: int64 */
@@ -1567,6 +1596,41 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    savePosting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Already saved; the existing application */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Application"];
+                };
+            };
+            /** @description Saved */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Application"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
             500: components["responses"]["Internal"];
         };
     };

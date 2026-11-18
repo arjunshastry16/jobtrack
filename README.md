@@ -57,7 +57,7 @@ against it.
 | Contacts | `GET/POST /contacts`, `GET/PUT/DELETE /contacts/{id}`, `PUT/DELETE /applications/{id}/contacts/{contact_id}` |
 | Notes | `GET/POST /applications/{id}/notes`, `PUT/DELETE /notes/{id}` |
 | Job-board watches | `GET/POST /watches`, `GET/PUT/DELETE /watches/{id}` |
-| Postings inbox | `GET /postings` (by watch or company, cursor pagination; matches from the nightly board sync) |
+| Postings inbox | `GET /postings` (by watch or company, cursor pagination; matches from the nightly board sync), `POST /postings/{id}/application` (save to the wishlist; idempotent) |
 | Health | `GET /healthz` (liveness), `GET /readyz` (database reachable) |
 
 ## Development

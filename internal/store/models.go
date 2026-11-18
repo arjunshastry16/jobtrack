@@ -21,6 +21,7 @@ type Application struct {
 	Status         string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	PostingID      *int64
 }
 
 type ApplicationContact struct {

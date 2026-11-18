@@ -27,6 +27,13 @@ type Querier interface {
 	CompleteJob(ctx context.Context, arg CompleteJobParams) (int64, error)
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (int64, error)
 	CreateApplicationEvent(ctx context.Context, arg CreateApplicationEventParams) (ApplicationEvent, error)
+	// CreateApplicationFromPosting saves a posting as a wishlist application, filled in
+	// from the posting: its title as the role (cut to the role's 200-character limit), its
+	// link, its location and the board it came from. It returns no row if the posting doesn't
+	// exist or is already saved (ON CONFLICT DO NOTHING on the unique posting_id; a
+	// concurrent save of the same posting waits for the first and then also does nothing).
+	//
+	CreateApplicationFromPosting(ctx context.Context, id int64) (int64, error)
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateContact(ctx context.Context, arg CreateContactParams) (Contact, error)
 	CreateNote(ctx context.Context, arg CreateNoteParams) (Note, error)
@@ -47,6 +54,7 @@ type Querier interface {
 	//
 	FailJob(ctx context.Context, arg FailJobParams) (FailJobRow, error)
 	GetApplication(ctx context.Context, id int64) (GetApplicationRow, error)
+	GetApplicationIDByPosting(ctx context.Context, postingID int64) (int64, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	GetContact(ctx context.Context, id int64) (Contact, error)
 	GetJob(ctx context.Context, id int64) (Job, error)
@@ -67,7 +75,7 @@ type Querier interface {
 	ListEnabledWatchIDs(ctx context.Context) ([]int64, error)
 	ListNotes(ctx context.Context, applicationID int64) ([]Note, error)
 	// ListPostings is the inbox: postings newest first, with their watch's company and
-	// board. Removed postings are left out unless include_removed is set. Keyset
+	// board, and the application saved from each (if any). Removed postings are left out unless include_removed is set. Keyset
 	// pagination as in ListApplications: before_id is the last id of the previous page.
 	//
 	ListPostings(ctx context.Context, arg ListPostingsParams) ([]ListPostingsRow, error)
