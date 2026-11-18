@@ -81,3 +81,17 @@ RETURNING id, kind, state, attempts;
 -- name: GetJob :one
 SELECT * FROM jobs
 WHERE id = $1;
+
+-- CountJobs is the queue's size by kind and state, for metrics. oldest_due_seconds is,
+-- for pending jobs, how long the longest-waiting due one (run_at passed) has waited: a
+-- queue that falls behind shows here before anyone notices late reminders. It's 0 for
+-- the other states, and when nothing is due.
+--
+-- name: CountJobs :many
+SELECT kind,
+       state,
+       count(*) AS jobs,
+       COALESCE(EXTRACT(EPOCH FROM now() - min(run_at) FILTER (WHERE state = 'pending' AND run_at <= now())), 0)::float8 AS oldest_due_seconds
+FROM jobs
+GROUP BY kind, state
+ORDER BY kind, state;

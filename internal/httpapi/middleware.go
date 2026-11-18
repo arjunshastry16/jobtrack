@@ -18,9 +18,9 @@ import (
 //
 //	withRequestID -> withTimeout -> accessLog -> recoverPanics -> requireLogin -> ServeMux
 //
-// Order matters: the request ID must exist before anything logs; accessLog must sit
-// outside recoverPanics so it logs the 500 a panic turns into, and outside requireLogin
-// so refused requests are logged too; and nothing between
+// Order matters: the request ID must exist before anything logs; accessLog (which also
+// feeds the metrics) must sit outside recoverPanics so it counts the 500 a panic turns
+// into, and outside requireLogin so refused requests are counted too; and nothing between
 // accessLog and the ServeMux may copy the request, because ServeMux records the
 // matched route pattern (r.Pattern) on the *http.Request it receives.
 
@@ -78,17 +78,28 @@ func (s *statusRecorder) wroteHeader() bool { return s.status != 0 }
 // probePaths are hit every few seconds by health checks; logging them at Info would drown real traffic.
 var probePaths = map[string]bool{"/healthz": true, "/readyz": true}
 
-// accessLog writes one structured line per request after it completes.
-func accessLog(logger *slog.Logger, next http.Handler) http.Handler {
+// RequestObserver records each answered request, e.g. as metrics (*metrics.Metrics).
+// pattern is the ServeMux pattern that matched, or "" if the request never reached one.
+type RequestObserver interface {
+	ObserveRequest(pattern string, status int, took time.Duration)
+}
+
+// accessLog writes one structured line per request after it completes, and reports it
+// to obs (if not nil).
+func accessLog(logger *slog.Logger, obs RequestObserver, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w}
 
 		next.ServeHTTP(rec, r)
 
+		took := time.Since(start)
 		status := rec.status
 		if status == 0 {
 			status = http.StatusOK // handler wrote nothing at all
+		}
+		if obs != nil {
+			obs.ObserveRequest(r.Pattern, status, took)
 		}
 		level := slog.LevelInfo
 		switch {
@@ -105,7 +116,7 @@ func accessLog(logger *slog.Logger, next http.Handler) http.Handler {
 			slog.String("route", r.Pattern), // e.g. "GET /api/v1/companies/{id}": low-cardinality, good for grouping
 			slog.Int("status", status),
 			slog.Int("bytes", rec.bytes),
-			slog.Float64("duration_ms", float64(time.Since(start).Microseconds())/1000),
+			slog.Float64("duration_ms", float64(took.Microseconds())/1000),
 		)
 	})
 }

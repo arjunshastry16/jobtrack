@@ -43,6 +43,7 @@ func TestLoad(t *testing.T) {
 			env: map[string]string{
 				"JOBTRACK_DATABASE_URL":        testURL,
 				"JOBTRACK_ADDR":                ":8080",
+				"JOBTRACK_METRICS_ADDR":        "0.0.0.0:9091",
 				"JOBTRACK_LOG_LEVEL":           "debug",
 				"JOBTRACK_SHUTDOWN_TIMEOUT":    "3s",
 				"JOBTRACK_NTFY_URL":            "https://ntfy.example/jt",
@@ -54,7 +55,7 @@ func TestLoad(t *testing.T) {
 				"JOBTRACK_ALLOWED_LOGINS":      " Me@GitHub, ,friend@example.com ",
 			},
 			want: Config{
-				Addr: ":8080", DatabaseURL: testURL, LogLevel: slog.LevelDebug, ShutdownTimeout: 3 * time.Second,
+				Addr: ":8080", MetricsAddr: "0.0.0.0:9091", DatabaseURL: testURL, LogLevel: slog.LevelDebug, ShutdownTimeout: 3 * time.Second,
 				NtfyURL: "https://ntfy.example/jt", NtfyToken: "tk_1",
 				ReminderAfterDays: 10, ReminderStartHour: 0, ReminderEndHour: 24, SyncHour: 0,
 				AllowedLogins: []string{"me@github", "friend@example.com"},
@@ -83,7 +84,18 @@ func TestLoad(t *testing.T) {
 		{name: "unknown auth mode", env: env(map[string]string{"JOBTRACK_AUTH": "none"}), wantErr: true},
 		{name: "auth off on all interfaces", env: env(map[string]string{"JOBTRACK_AUTH": "off", "JOBTRACK_ADDR": ":8090"}), wantErr: true},
 		{name: "auth off on a LAN address", env: env(map[string]string{"JOBTRACK_AUTH": "off", "JOBTRACK_ADDR": "192.168.1.5:8090"}), wantErr: true},
+		{
+			name: "app and metrics both on any free port",
+			env:  env(map[string]string{"JOBTRACK_ADDR": "127.0.0.1:0", "JOBTRACK_METRICS_ADDR": "127.0.0.1:0"}),
+			want: Config{
+				Addr: "127.0.0.1:0", MetricsAddr: "127.0.0.1:0", DatabaseURL: testURL, LogLevel: slog.LevelInfo,
+				ShutdownTimeout: 10 * time.Second, ReminderAfterDays: 7, ReminderStartHour: 9, ReminderEndHour: 21,
+				SyncHour: 6, AllowedLogins: []string{"me@github"},
+			},
+		},
 		{name: "missing database url", env: map[string]string{}, wantErr: true},
+		{name: "metrics addr without a port", env: env(map[string]string{"JOBTRACK_METRICS_ADDR": "9091"}), wantErr: true},
+		{name: "metrics on the app's addr", env: env(map[string]string{"JOBTRACK_ADDR": ":8090", "JOBTRACK_METRICS_ADDR": ":8090"}), wantErr: true},
 		{name: "bad log level", env: env(map[string]string{"JOBTRACK_LOG_LEVEL": "loud"}), wantErr: true},
 		{name: "bad duration", env: env(map[string]string{"JOBTRACK_SHUTDOWN_TIMEOUT": "soon"}), wantErr: true},
 		{name: "non-positive duration", env: env(map[string]string{"JOBTRACK_SHUTDOWN_TIMEOUT": "0s"}), wantErr: true},

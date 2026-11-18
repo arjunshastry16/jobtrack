@@ -58,10 +58,12 @@ docker run --rm --network "$net" -e JOBTRACK_DATABASE_URL="$db_url" "$image" mig
 	fail "migrations still pending after up"
 
 echo "- start the server"
-docker run -d --name "$app" --network "$net" -p 127.0.0.1::8090 \
+docker run -d --name "$app" --network "$net" -p 127.0.0.1::8090 -p 127.0.0.1::9091 \
 	--read-only --cap-drop ALL --security-opt no-new-privileges --memory 128m \
-	-e JOBTRACK_DATABASE_URL="$db_url" -e JOBTRACK_ALLOWED_LOGINS="$login" "$image" >/dev/null
+	-e JOBTRACK_DATABASE_URL="$db_url" -e JOBTRACK_ALLOWED_LOGINS="$login" \
+	-e JOBTRACK_METRICS_ADDR=0.0.0.0:9091 "$image" >/dev/null
 base="http://$(docker port "$app" 8090/tcp | head -n 1)"
+metrics="http://$(docker port "$app" 9091/tcp | head -n 1)/metrics"
 
 # The image's own health check, run by hand rather than waiting for Docker's interval.
 ready=
@@ -102,6 +104,17 @@ expect 200 "$(status GET /api/v1/companies "${as_user[@]}")" "list companies"
 grep -q '"Smoke Test Co"' "$body" || fail "the company isn't listed: $(cat "$body")"
 expect 200 "$(status GET /stats "${as_user[@]}")" "web app page"
 grep -qi '<!doctype html>' "$body" || fail "web app not embedded: $(head -c 200 "$body")"
+
+# Metrics: on their own port, counting the requests above, and not on the app's port.
+curl -fsS -o "$body" "$metrics" || fail "no metrics on port 9091"
+grep -q '^jobtrack_http_requests_total{code="201",route="POST /api/v1/companies"} 1$' "$body" ||
+	fail "metrics didn't count the company created: $(grep '^jobtrack_http' "$body" | head -n 5)"
+if [ -n "$want_version" ]; then
+	grep -q "^jobtrack_build_info{.*version=\"$want_version\"} 1\$" "$body" ||
+		fail "metrics build_info: $(grep '^jobtrack_build_info' "$body"), want version $want_version"
+fi
+echo "- metrics on their own port: 200"
+expect 401 "$(status GET /metrics)" "metrics on the app's port without a login"
 
 echo "- stop (SIGTERM)"
 docker stop -t 15 "$app" >/dev/null

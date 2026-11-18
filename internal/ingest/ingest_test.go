@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -390,4 +391,74 @@ func TestSyncedFetchRunsOnAWorker(t *testing.T) {
 	if got := f.stored(t, w); len(got) != 1 || got["a"].title != "Engineer" {
 		t.Errorf("stored %v, want only a", got)
 	}
+}
+
+// fakeObserver records what the service reports, as metrics.Metrics would.
+type fakeObserver struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (f *fakeObserver) FetchFinished(board, outcome string, took time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if took < 0 {
+		outcome += "(negative duration)"
+	}
+	f.calls = append(f.calls, "fetch "+board+" "+outcome)
+}
+
+func (f *fakeObserver) PostingsAdded(board string, n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, fmt.Sprintf("added %s %d", board, n))
+}
+
+func (f *fakeObserver) take() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c := f.calls
+	f.calls = nil
+	return c
+}
+
+func TestFetchesAreReported(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	obs := &fakeObserver{}
+	f.svc.cfg.Observer = obs
+	w := f.watch(t, nil, nil, true)
+	check := func(what string, want ...string) {
+		t.Helper()
+		if got := obs.take(); !slices.Equal(got, want) {
+			t.Errorf("%s: reported %q, want %q", what, got, want)
+		}
+	}
+
+	f.board.set(nil, posting("a", "Engineer", ""), posting("b", "Designer", ""))
+	if err := f.fetch(t, w); err != nil {
+		t.Fatal(err)
+	}
+	check("first fetch", "fetch greenhouse ok", "added greenhouse 2")
+
+	if err := f.fetch(t, w); err != nil {
+		t.Fatal(err)
+	}
+	check("same postings again", "fetch greenhouse ok", "added greenhouse 0")
+
+	f.board.set(&boards.HTTPError{Board: "greenhouse", Code: 503})
+	_ = f.fetch(t, w)
+	check("board outage", "fetch greenhouse error")
+
+	f.board.set(boards.ErrBoardNotFound)
+	_ = f.fetch(t, w)
+	check("no such company", "fetch greenhouse not_found")
+
+	// Shutdown cuts a fetch short: not the board's fault, so not reported.
+	ctx, cancel := context.WithCancel(t.Context())
+	f.board.set(context.Canceled)
+	f.board.onFetch = cancel
+	payload, _ := json.Marshal(fetchPayload{WatchID: w})
+	_ = f.svc.HandleFetch(ctx, jobs.Job{Kind: FetchKind, Payload: payload})
+	check("fetch cut short by shutdown")
 }

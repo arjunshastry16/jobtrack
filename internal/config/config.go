@@ -15,6 +15,10 @@ import (
 type Config struct {
 	// Addr is the host:port the HTTP server listens on.
 	Addr string
+	// MetricsAddr is the host:port that serves Prometheus metrics (GET /metrics), apart
+	// from the app so tailscale serve never exposes it and it needs no login. Empty (the
+	// default) means no metrics listener.
+	MetricsAddr string
 	// DatabaseURL is the Postgres connection string (required).
 	DatabaseURL string
 	// LogLevel is the minimum level that gets logged.
@@ -77,6 +81,17 @@ func Load(getenv func(string) string) (Config, error) {
 
 	if v := getenv("JOBTRACK_ADDR"); v != "" {
 		cfg.Addr = v
+	}
+
+	if v := getenv("JOBTRACK_METRICS_ADDR"); v != "" {
+		_, port, err := net.SplitHostPort(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("JOBTRACK_METRICS_ADDR: want host:port, got %q", v)
+		}
+		if v == cfg.Addr && port != "0" { // port 0 means "any free port", so both can have it
+			return Config{}, fmt.Errorf("JOBTRACK_METRICS_ADDR must differ from JOBTRACK_ADDR (both %q)", v)
+		}
+		cfg.MetricsAddr = v
 	}
 
 	level := defaultLogLevel

@@ -132,6 +132,13 @@ func TestRunRejectsBadConfig(t *testing.T) {
 // waitForListenAddr polls the JSON logs until the "listening" line shows up and returns its addr.
 func waitForListenAddr(t *testing.T, logs *syncBuffer) string {
 	t.Helper()
+	return waitForLoggedAddr(t, logs, "http server listening")
+}
+
+// waitForLoggedAddr polls the JSON logs until a line with message msg shows up and
+// returns its addr.
+func waitForLoggedAddr(t *testing.T, logs *syncBuffer, msg string) string {
+	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		sc := bufio.NewScanner(strings.NewReader(logs.String()))
@@ -140,12 +147,87 @@ func waitForListenAddr(t *testing.T, logs *syncBuffer) string {
 				Msg  string `json:"msg"`
 				Addr string `json:"addr"`
 			}
-			if json.Unmarshal(sc.Bytes(), &line) == nil && line.Msg == "http server listening" {
+			if json.Unmarshal(sc.Bytes(), &line) == nil && line.Msg == msg {
 				return line.Addr
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("server never logged its address; logs:\n%s", logs.String())
+	t.Fatalf("server never logged %q; logs:\n%s", msg, logs.String())
 	return ""
+}
+
+// TestRunServesMetrics starts the server with a metrics address: the metrics are on that
+// address only, count the app's requests, and stop with the server.
+func TestRunServesMetrics(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := map[string]string{
+		"JOBTRACK_ADDR":           "127.0.0.1:0",
+		"JOBTRACK_METRICS_ADDR":   "127.0.0.1:0",
+		"JOBTRACK_DATABASE_URL":   unreachableDB(t),
+		"JOBTRACK_ALLOWED_LOGINS": "me@github",
+	}
+	logs := &syncBuffer{}
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, func(k string) string { return env[k] }, logs) }()
+
+	app := waitForListenAddr(t, logs)
+	metricsAddr := waitForLoggedAddr(t, logs, "metrics server listening")
+
+	getStatus(t, "http://"+app+"/healthz")
+	status, body := get(t, "http://"+metricsAddr+"/metrics")
+	if status != http.StatusOK {
+		t.Fatalf("GET /metrics on the metrics address = %d, want 200", status)
+	}
+	for _, want := range []string{
+		`jobtrack_build_info{goversion="`,
+		`jobtrack_http_requests_total{code="200",route="GET /healthz"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics missing %q", want)
+		}
+	}
+	// Not on the app's address, which tailscale serve exposes: there it's just a path
+	// that needs a login.
+	if got := getStatus(t, "http://"+app+"/metrics"); got != http.StatusUnauthorized {
+		t.Errorf("GET /metrics on the app's address = %d, want 401", got)
+	}
+	// Only /metrics is served on the metrics address.
+	if got := getStatus(t, "http://"+metricsAddr+"/api/v1/companies"); got != http.StatusNotFound {
+		t.Errorf("GET /api/v1/companies on the metrics address = %d, want 404", got)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run() returned %v, want nil after shutdown", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("run() did not return within 5s of cancellation; logs:\n%s", logs.String())
+	}
+	if conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(t.Context(), "tcp", metricsAddr); err == nil {
+		_ = conn.Close()
+		t.Error("the metrics address still accepts connections after shutdown")
+	}
+}
+
+func get(t *testing.T, url string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := testClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, string(b)
 }

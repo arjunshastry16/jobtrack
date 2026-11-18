@@ -25,6 +25,12 @@ type Querier interface {
 	// stale worker's completion matches no row and is ignored.
 	//
 	CompleteJob(ctx context.Context, arg CompleteJobParams) (int64, error)
+	// CountJobs is the queue's size by kind and state, for metrics. oldest_due_seconds is,
+	// for pending jobs, how long the longest-waiting due one (run_at passed) has waited: a
+	// queue that falls behind shows here before anyone notices late reminders. It's 0 for
+	// the other states, and when nothing is due.
+	//
+	CountJobs(ctx context.Context) ([]CountJobsRow, error)
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (int64, error)
 	CreateApplicationEvent(ctx context.Context, arg CreateApplicationEventParams) (ApplicationEvent, error)
 	// CreateApplicationFromPosting saves a posting as a wishlist application, filled in

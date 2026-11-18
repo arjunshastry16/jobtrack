@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -383,5 +384,81 @@ func TestWorkerCancelsJobsThatOutlastTheDrain(t *testing.T) {
 	j := jobState(t, pool, id)
 	if j.State != "pending" || j.LastError == nil || !strings.Contains(*j.LastError, "context canceled") {
 		t.Errorf("job after cancelled drain: state %q, last error %v; want pending with context canceled", j.State, j.LastError)
+	}
+}
+
+// fakeObserver records what the worker reports, as metrics.Metrics would.
+type fakeObserver struct {
+	mu       sync.Mutex
+	finished []string // "kind:outcome"
+	expired  []string // kinds
+}
+
+func (f *fakeObserver) JobFinished(kind, outcome string, took time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if took < 0 {
+		outcome += "(negative duration)"
+	}
+	f.finished = append(f.finished, kind+":"+outcome)
+}
+
+func (f *fakeObserver) LeaseExpired(kind string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.expired = append(f.expired, kind)
+}
+
+func (f *fakeObserver) snapshot() (finished, expired []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	finished = append([]string{}, f.finished...)
+	slices.Sort(finished)
+	return finished, append([]string{}, f.expired...)
+}
+
+func TestWorkerReportsOutcomes(t *testing.T) {
+	t.Parallel()
+	q, pool := newQueue(t)
+	obs := &fakeObserver{}
+	cfg := fastConfig
+	cfg.Observer = obs
+	w := jobs.NewWorker(q, quietLogger, cfg)
+	w.Handle("ok", func(context.Context, jobs.Job) error { return nil })
+	w.Handle("flaky", func(_ context.Context, j jobs.Job) error {
+		if j.Attempt < 2 {
+			return errors.New("upstream timeout")
+		}
+		return nil
+	})
+	w.Handle("bad", func(context.Context, jobs.Job) error { return jobs.Permanent(errors.New("bad input")) })
+	w.Handle("crashed", func(context.Context, jobs.Job) error { return nil })
+
+	ok, _, _ := q.Enqueue(t.Context(), "ok", nil)
+	flaky, _, _ := q.Enqueue(t.Context(), "flaky", nil)
+	bad, _, _ := q.Enqueue(t.Context(), "bad", nil)
+	// A job whose worker "crashed": claimed with a short lease and never reported back.
+	crashed, _, _ := q.Enqueue(t.Context(), "crashed", nil, jobs.RunAt(time.Now().Add(-time.Hour)))
+	if claimed, err := q.Claim(t.Context(), 1, 200*time.Millisecond); err != nil || len(claimed) != 1 || claimed[0].ID != crashed {
+		t.Fatalf("claim: %v %v", claimed, err)
+	}
+	startWorker(t, w)
+
+	for _, id := range []int64{ok, flaky, crashed} {
+		waitFor(t, 5*time.Second, "job done", stateIs(t, pool, id, "done"))
+	}
+	waitFor(t, 5*time.Second, "job dead", stateIs(t, pool, bad, "dead"))
+	waitFor(t, 5*time.Second, "all outcomes reported", func() bool {
+		finished, _ := obs.snapshot()
+		return len(finished) >= 5
+	})
+
+	finished, expired := obs.snapshot()
+	want := []string{"bad:dead", "crashed:done", "flaky:done", "flaky:retry", "ok:done"}
+	if !slices.Equal(finished, want) {
+		t.Errorf("finished = %v, want %v", finished, want)
+	}
+	if !slices.Equal(expired, []string{"crashed"}) {
+		t.Errorf("expired leases = %v, want [crashed]", expired)
 	}
 }

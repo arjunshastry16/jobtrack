@@ -33,6 +33,8 @@ type Deps struct {
 	UI fs.FS
 	// Auth says who may use the app; the zero value refuses everyone but health probes.
 	Auth Auth
+	// Observer is told about every request (metrics); nil means nobody is.
+	Observer RequestObserver
 }
 
 // defaultRequestTimeout is below the server's 15s WriteTimeout, so a slow handler gets
@@ -121,7 +123,7 @@ func NewRouter(d Deps) http.Handler {
 	// See middleware.go for why the order matters.
 	return withRequestID(
 		withTimeout(timeout,
-			accessLog(d.Logger,
+			accessLog(d.Logger, d.Observer,
 				recoverPanics(d.Logger,
 					requireLogin(d.Auth, mux)))))
 }

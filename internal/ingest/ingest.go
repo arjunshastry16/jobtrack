@@ -53,7 +53,29 @@ const (
 type Config struct {
 	SyncHour int            // fetch once a day, from this local hour (0-23)
 	Location *time.Location // nil means time.Local (set TZ in the container)
+	Observer Observer       // told about every fetch (nil: nobody is)
 }
+
+// Outcomes of a board fetch, as reported to an Observer.
+const (
+	OutcomeOK       = "ok"
+	OutcomeNotFound = "not_found" // the board has no such company: the watch is wrong
+	OutcomeError    = "error"     // anything else: HTTP errors, timeouts, bad responses
+)
+
+// Observer is told how board fetches go (*metrics.Metrics implements it).
+type Observer interface {
+	// FetchFinished reports one fetch from a board (not counting time waiting for the
+	// board's turn). Fetches cut short by shutdown aren't reported.
+	FetchFinished(board, outcome string, took time.Duration)
+	// PostingsAdded reports postings a fetch stored for the first time.
+	PostingsAdded(board string, n int)
+}
+
+type noObserver struct{}
+
+func (noObserver) FetchFinished(string, string, time.Duration) {}
+func (noObserver) PostingsAdded(string, int)                   {}
 
 // Service syncs watches.
 type Service struct {
@@ -70,6 +92,9 @@ type Service struct {
 func NewService(st store.DB, q *jobs.Queue, bs map[string]boards.Board, logger *slog.Logger, cfg Config) *Service {
 	if cfg.Location == nil {
 		cfg.Location = time.Local
+	}
+	if cfg.Observer == nil {
+		cfg.Observer = noObserver{}
 	}
 	return &Service{
 		store: st, queue: q, boards: bs, gates: pace.NewGates(boardGap),
@@ -145,24 +170,34 @@ func (s *Service) HandleFetch(ctx context.Context, j jobs.Job) error {
 	}
 
 	var found []boards.Posting
+	var fetchTook time.Duration
 	start := time.Now()
 	err = s.gates.For(w.Board).Do(ctx, func() error {
+		fetchStart := time.Now()
 		var ferr error
 		found, ferr = board.Fetch(ctx, w.BoardToken)
+		fetchTook = time.Since(fetchStart)
 		return ferr
 	})
+	notFound := errors.Is(err, boards.ErrBoardNotFound)
 	if err != nil {
 		// Keep the error on the watch where the user can see it, then let the job retry
 		// (or give up now, if retrying can't help). A fetch cut short by shutdown isn't
 		// the board's fault, so it isn't recorded.
 		if ctx.Err() == nil {
 			s.recordFailure(ctx, w.ID, err)
+			outcome := OutcomeError
+			if notFound {
+				outcome = OutcomeNotFound
+			}
+			s.cfg.Observer.FetchFinished(w.Board, outcome, fetchTook)
 		}
-		if errors.Is(err, boards.ErrBoardNotFound) {
+		if notFound {
 			return jobs.Permanent(fmt.Errorf("watch %d: %w", w.ID, err))
 		}
 		return fmt.Errorf("watch %d: %w", w.ID, err)
 	}
+	s.cfg.Observer.FetchFinished(w.Board, OutcomeOK, fetchTook)
 
 	filter := match.New(w.Keywords, w.Locations)
 	var rows []store.UpsertPostingParams
@@ -203,6 +238,7 @@ func (s *Service) HandleFetch(ctx context.Context, j jobs.Job) error {
 	if err != nil {
 		return fmt.Errorf("watch %d: store postings: %w", w.ID, err)
 	}
+	s.cfg.Observer.PostingsAdded(w.Board, int(added))
 	s.logger.InfoContext(ctx, "watch fetched", "watch_id", w.ID, "board", w.Board,
 		"found", len(found), "matched", len(rows), "new", added, "removed", removed,
 		"skipped", skipped, "took", time.Since(start).Round(time.Millisecond).String())

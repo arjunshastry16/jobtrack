@@ -16,6 +16,24 @@ import (
 // idempotent. Return an error to retry with backoff, or Permanent(err) to give up now.
 type HandlerFunc func(ctx context.Context, j Job) error
 
+// Outcomes of a job run, as reported to an Observer.
+const (
+	OutcomeDone         = "done"          // succeeded and recorded
+	OutcomeRetry        = "retry"         // failed; will run again after a backoff
+	OutcomeDead         = "dead"          // failed for good (permanent error or out of attempts)
+	OutcomeLeaseLost    = "lease_lost"    // finished after its lease expired; result discarded
+	OutcomeRecordFailed = "record_failed" // finished, but the outcome couldn't be saved
+)
+
+// Observer is told how each job run ended (*metrics.Metrics implements it).
+type Observer interface {
+	// JobFinished reports one run of a job: its kind, outcome (Outcome*) and duration.
+	JobFinished(kind, outcome string, took time.Duration)
+	// LeaseExpired reports a job put back on the queue because its worker stopped
+	// (crashed or was killed) before finishing it.
+	LeaseExpired(kind string)
+}
+
 // Config tunes a Worker. Zero fields get the defaults noted.
 type Config struct {
 	Concurrency  int           // jobs processed in parallel (default 2)
@@ -28,6 +46,8 @@ type Config struct {
 	// context is cancelled (default 30s). A cancelled job is recorded as failed and
 	// retried later, so a long job can't hold up a restart.
 	DrainTimeout time.Duration
+	// Observer is told how every job ends (nil: nobody is).
+	Observer Observer
 }
 
 func (c Config) withDefaults() Config {
@@ -51,6 +71,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.DrainTimeout <= 0 {
 		c.DrainTimeout = 30 * time.Second
+	}
+	if c.Observer == nil {
+		c.Observer = noObserver{}
 	}
 	return c
 }
@@ -141,13 +164,19 @@ func (w *Worker) process(ctx context.Context, j Job) {
 	recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
 	defer cancelRecord()
 
+	var outcome string
+	defer func() { w.cfg.Observer.JobFinished(j.Kind, outcome, took) }()
+
 	if err == nil {
 		switch cerr := w.queue.Complete(recordCtx, j); {
 		case errors.Is(cerr, ErrLeaseLost):
+			outcome = OutcomeLeaseLost
 			log.Warn("job finished after its lease was lost; result discarded", "took", took.String())
 		case cerr != nil:
+			outcome = OutcomeRecordFailed
 			log.Error("could not record job completion", "err", cerr)
 		default:
+			outcome = OutcomeDone
 			log.Info("job done", "took", took.String())
 		}
 		return
@@ -157,15 +186,25 @@ func (w *Worker) process(ctx context.Context, j Job) {
 	dead, ferr := w.queue.Fail(recordCtx, j, err, retryIn, IsPermanent(err))
 	switch {
 	case errors.Is(ferr, ErrLeaseLost):
+		outcome = OutcomeLeaseLost
 		log.Warn("job failed after its lease was lost", "err", err)
 	case ferr != nil:
+		outcome = OutcomeRecordFailed
 		log.Error("could not record job failure", "err", ferr, "job_err", err)
 	case dead:
+		outcome = OutcomeDead
 		log.Error("job failed for good; moved to dead", "err", err, "max_attempts", j.MaxAttempts)
 	default:
+		outcome = OutcomeRetry
 		log.Warn("job failed; will retry", "err", err, "retry_in", retryIn.String())
 	}
 }
+
+// noObserver is the Observer used when none is configured.
+type noObserver struct{}
+
+func (noObserver) JobFinished(string, string, time.Duration) {}
+func (noObserver) LeaseExpired(string)                       {}
 
 // runHandler calls the job's handler, turning a panic into an error so one bad job
 // can't take down the worker.
@@ -190,6 +229,7 @@ func (w *Worker) reapLoop(ctx context.Context) {
 			w.logger.Warn("requeueing expired jobs failed", "err", err)
 		}
 		for _, r := range requeued {
+			w.cfg.Observer.LeaseExpired(r.Kind)
 			w.logger.Warn("job lease expired; requeued",
 				"job_id", r.ID, "kind", r.Kind, "attempts", r.Attempts, "dead", r.Dead)
 		}

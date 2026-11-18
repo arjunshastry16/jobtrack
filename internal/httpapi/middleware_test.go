@@ -148,7 +148,7 @@ func TestAccessLogProbesAtDebug(t *testing.T) {
 func TestRecoverPanics(t *testing.T) {
 	logger, logs := newCapturingLogger()
 	boom := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") })
-	h := withRequestID(accessLog(logger, recoverPanics(logger, boom)))
+	h := withRequestID(accessLog(logger, nil, recoverPanics(logger, boom)))
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil))
@@ -175,7 +175,7 @@ func TestRecoverPanics(t *testing.T) {
 
 func TestRecoverPanicsAfterResponseStarted(t *testing.T) {
 	logger, logs := newCapturingLogger()
-	h := accessLog(logger, recoverPanics(logger, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := accessLog(logger, nil, recoverPanics(logger, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("partial"))
 		panic("late boom")

@@ -95,6 +95,52 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (int64
 	return result.RowsAffected(), nil
 }
 
+const countJobs = `-- name: CountJobs :many
+SELECT kind,
+       state,
+       count(*) AS jobs,
+       COALESCE(EXTRACT(EPOCH FROM now() - min(run_at) FILTER (WHERE state = 'pending' AND run_at <= now())), 0)::float8 AS oldest_due_seconds
+FROM jobs
+GROUP BY kind, state
+ORDER BY kind, state
+`
+
+type CountJobsRow struct {
+	Kind             string
+	State            string
+	Jobs             int64
+	OldestDueSeconds float64
+}
+
+// CountJobs is the queue's size by kind and state, for metrics. oldest_due_seconds is,
+// for pending jobs, how long the longest-waiting due one (run_at passed) has waited: a
+// queue that falls behind shows here before anyone notices late reminders. It's 0 for
+// the other states, and when nothing is due.
+func (q *Queries) CountJobs(ctx context.Context) ([]CountJobsRow, error) {
+	rows, err := q.db.Query(ctx, countJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountJobsRow
+	for rows.Next() {
+		var i CountJobsRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.State,
+			&i.Jobs,
+			&i.OldestDueSeconds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const enqueueJob = `-- name: EnqueueJob :one
 INSERT INTO jobs (kind, payload, run_at, max_attempts, dedupe_key, lease_seconds)
 VALUES ($1, $2, COALESCE($5::timestamptz, now()), $3, $4, $6::int)

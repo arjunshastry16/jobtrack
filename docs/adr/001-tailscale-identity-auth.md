@@ -34,8 +34,11 @@ The API binds to `127.0.0.1` only and is reached through `tailscale serve`. A mi
   `/api`.
 - **Health probes stay open:** `GET /healthz` and `/readyz` need no login, because deploy
   checks, Docker healthchecks and Uptime Kuma call them directly. They reveal only the
-  build version and whether the database is up. Later, `/metrics` (step 5.1) will join
-  them.
+  build version and whether the database is up.
+- **Metrics aren't an exception:** `/metrics` (step 5.1) is served on a separate address,
+  `JOBTRACK_METRICS_ADDR`, that tailscale serve doesn't proxy, so Prometheus can scrape
+  it without a login and the tailnet can't see it. On the app's address it's an ordinary
+  path, behind the login check like everything else.
 
 The middleware sits inside the access log, so refused requests are logged, with the login
 that was refused.

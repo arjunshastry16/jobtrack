@@ -124,6 +124,28 @@ It fails closed: the server won't start without an allowlist. Why this rather th
 passwords or OIDC, and what it trusts, is in
 [ADR 001](docs/adr/001-tailscale-identity-auth.md).
 
+## Metrics
+
+With `JOBTRACK_METRICS_ADDR` set, the service serves Prometheus metrics at `GET /metrics`
+on that address. It's a separate listener: tailscale serve never exposes it, and it needs
+no login. Defined in [`internal/metrics`](internal/metrics/metrics.go):
+
+| Metric | What it measures |
+|---|---|
+| `jobtrack_http_requests_total{route,code}` | Requests answered, by route pattern (e.g. `GET /api/v1/companies/{id}`) and status |
+| `jobtrack_http_request_duration_seconds{route}` | Response time; has a bucket edge at the 300 ms latency target |
+| `jobtrack_jobs{kind,state}` | The job queue's size, read from Postgres at each scrape |
+| `jobtrack_jobs_oldest_due_seconds{kind}` | How long the longest-waiting due job has waited |
+| `jobtrack_jobs_processed_total{kind,outcome}`, `jobtrack_job_duration_seconds{kind}` | Background job runs: done, retry, dead, lease lost |
+| `jobtrack_job_leases_expired_total{kind}` | Jobs recovered from a worker that died mid-job |
+| `jobtrack_board_fetches_total{board,outcome}`, `jobtrack_board_fetch_duration_seconds{board}` | Job board fetches: ok, not found, error |
+| `jobtrack_postings_new_total{board}` | Postings stored for the first time |
+| `jobtrack_build_info{version,goversion}` | Which build is running |
+
+Plus the Go runtime's and the process's standard metrics (`go_*`, `process_*`). Labels
+are kept low-cardinality: routes are patterns, never raw paths, and no label holds a
+company or anything personal.
+
 ## Development
 
 Requires Go 1.27+, Docker, [golangci-lint](https://golangci-lint.run/) v2, and Node 22.12+

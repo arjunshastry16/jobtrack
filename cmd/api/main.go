@@ -28,6 +28,7 @@ import (
 	"github.com/arjunshastry16/jobtrack/internal/httpapi"
 	"github.com/arjunshastry16/jobtrack/internal/ingest"
 	"github.com/arjunshastry16/jobtrack/internal/jobs"
+	"github.com/arjunshastry16/jobtrack/internal/metrics"
 	"github.com/arjunshastry16/jobtrack/internal/notify"
 	"github.com/arjunshastry16/jobtrack/internal/reminders"
 	"github.com/arjunshastry16/jobtrack/internal/requestid"
@@ -142,6 +143,9 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		return err
 	}
 
+	// Every part reports to the metrics; the queue's size is read from the database.
+	m := metrics.New(version, st, logger)
+
 	// Background work: a job worker, plus a scheduler that enqueues jobs.
 	queue := jobs.New(st)
 	worker := jobs.NewWorker(queue, logger, jobs.Config{
@@ -150,12 +154,13 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		Concurrency: 4,
 		// Jobs still running at shutdown get as long as HTTP requests do.
 		DrainTimeout: cfg.ShutdownTimeout,
+		Observer:     m,
 	})
 	rem := reminders.NewService(st, queue, notifier, logger, reminders.Config{
 		AfterDays: cfg.ReminderAfterDays, StartHour: cfg.ReminderStartHour, EndHour: cfg.ReminderEndHour,
 	})
 	rem.Register(worker)
-	ing := ingest.NewService(st, queue, boards.All(nil), logger, ingest.Config{SyncHour: cfg.SyncHour})
+	ing := ingest.NewService(st, queue, boards.All(nil), logger, ingest.Config{SyncHour: cfg.SyncHour, Observer: m})
 	ing.Register(worker)
 	sched := scheduler.New(logger, rem.ScanTask(time.Hour), ing.SyncTask(time.Hour))
 
@@ -174,29 +179,43 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if cfg.AuthOff {
 		logger.Warn("JOBTRACK_AUTH=off: every request is let in without a Tailscale login (local development only)")
 	}
-	srv := &http.Server{
-		Handler: httpapi.NewRouter(httpapi.Deps{
-			Version: version, DB: pool, Store: st, Logger: logger, UI: webui.Files(),
-			Auth: httpapi.Auth{Logins: cfg.AllowedLogins, Off: cfg.AuthOff},
-		}),
-		// Timeouts stop slow or stuck clients from holding connections open forever.
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
-	}
+	app := httpapi.NewRouter(httpapi.Deps{
+		Version: version, DB: pool, Store: st, Logger: logger, UI: webui.Files(),
+		Auth:     httpapi.Auth{Logins: cfg.AllowedLogins, Off: cfg.AuthOff},
+		Observer: m,
+	})
 
-	// Listening separately from serving lets us log the real address (useful with port 0 in tests).
+	// The app, and the metrics on their own address if configured. Listening separately
+	// from serving lets us log the real address (useful with port 0 in tests).
+	var servers []listening
+	defer func() {
+		for _, s := range servers {
+			_ = s.srv.Close() // after an early error return; harmless after Shutdown
+		}
+	}()
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.Addr, err)
 	}
+	servers = append(servers, listening{newHTTPServer(app, logger), ln})
 	logger.Info("http server listening", "addr", ln.Addr().String(), "version", version, "web_ui", webui.Files() != nil)
 
-	// Serve blocks, so it runs in its own goroutine and reports back on a channel.
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- srv.Serve(ln) }()
+	if cfg.MetricsAddr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("GET /metrics", m.Handler())
+		mln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.MetricsAddr)
+		if err != nil {
+			return fmt.Errorf("listen on %s for metrics: %w", cfg.MetricsAddr, err)
+		}
+		servers = append(servers, listening{newHTTPServer(mux, logger), mln})
+		logger.Info("metrics server listening", "addr", mln.Addr().String())
+	}
+
+	// Serve blocks, so each server runs in its own goroutine and reports back on a channel.
+	serveErr := make(chan error, len(servers))
+	for _, s := range servers {
+		go func() { serveErr <- s.srv.Serve(s.ln) }()
+	}
 
 	select {
 	case err := <-serveErr:
@@ -211,17 +230,40 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	defer cancel()
 
 	// Shutdown stops accepting new connections and waits for in-flight requests to finish.
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("graceful shutdown: %w", err)
+	for _, s := range servers {
+		if err := s.srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("graceful shutdown: %w", err)
+		}
 	}
-	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("http server: %w", err)
+	for range servers {
+		if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("http server: %w", err)
+		}
 	}
 	// The worker started draining when ctx was cancelled, alongside the HTTP shutdown.
 	stopBackground()
 	background.Wait()
 	logger.Info("stopped cleanly")
 	return nil
+}
+
+// listening is an HTTP server and the listener it serves.
+type listening struct {
+	srv *http.Server
+	ln  net.Listener
+}
+
+// newHTTPServer returns a server for h with timeouts that stop slow or stuck clients
+// from holding connections open forever.
+func newHTTPServer(h http.Handler, logger *slog.Logger) *http.Server {
+	return &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	}
 }
 
 // newNotifier returns the ntfy notifier, or one that only logs if no topic is configured.
