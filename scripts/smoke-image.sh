@@ -60,7 +60,7 @@ docker run --rm --network "$net" -e JOBTRACK_DATABASE_URL="$db_url" "$image" mig
 echo "- start the server"
 docker run -d --name "$app" --network "$net" -p 127.0.0.1::8090 \
 	--read-only --cap-drop ALL --security-opt no-new-privileges --memory 128m \
-	-e JOBTRACK_DATABASE_URL="$db_url" -e JOBTRACK_ALLOWED_LOGINS="$login" "$image" >/dev/null
+	-e JOBTRACK_DATABASE_URL="$db_url" -e JOBTRACK_ALLOWED_LOGINS="$login" -e JOBTRACK_DRILL_SETTING=set "$image" >/dev/null
 base="http://$(docker port "$app" 8090/tcp | head -n 1)"
 
 # The image's own health check, run by hand rather than waiting for Docker's interval.
