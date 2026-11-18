@@ -36,3 +36,20 @@ ORDER BY id;
 UPDATE watches
 SET last_checked_at = now(), last_error = sqlc.narg(last_error)
 WHERE id = $1;
+
+-- ListPostings is the inbox: postings newest first, with their watch's company and
+-- board. Removed postings are left out unless include_removed is set. Keyset
+-- pagination as in ListApplications: before_id is the last id of the previous page.
+--
+-- name: ListPostings :many
+SELECT p.id, p.watch_id, w.company_id, c.name AS company_name, w.board,
+       p.title, p.location, p.url, p.published_at, p.first_seen_at, p.last_seen_at, p.removed_at
+FROM postings p
+JOIN watches w ON w.id = p.watch_id
+JOIN companies c ON c.id = w.company_id
+WHERE (sqlc.narg(watch_id)::bigint IS NULL OR p.watch_id = sqlc.narg(watch_id)::bigint)
+  AND (sqlc.narg(company_id)::bigint IS NULL OR w.company_id = sqlc.narg(company_id)::bigint)
+  AND (sqlc.arg(include_removed)::boolean OR p.removed_at IS NULL)
+  AND (sqlc.narg(before_id)::bigint IS NULL OR p.id < sqlc.narg(before_id)::bigint)
+ORDER BY p.id DESC
+LIMIT sqlc.arg(row_limit)::int;

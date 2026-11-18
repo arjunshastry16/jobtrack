@@ -36,6 +36,85 @@ func (q *Queries) ListEnabledWatchIDs(ctx context.Context) ([]int64, error) {
 	return items, nil
 }
 
+const listPostings = `-- name: ListPostings :many
+SELECT p.id, p.watch_id, w.company_id, c.name AS company_name, w.board,
+       p.title, p.location, p.url, p.published_at, p.first_seen_at, p.last_seen_at, p.removed_at
+FROM postings p
+JOIN watches w ON w.id = p.watch_id
+JOIN companies c ON c.id = w.company_id
+WHERE ($1::bigint IS NULL OR p.watch_id = $1::bigint)
+  AND ($2::bigint IS NULL OR w.company_id = $2::bigint)
+  AND ($3::boolean OR p.removed_at IS NULL)
+  AND ($4::bigint IS NULL OR p.id < $4::bigint)
+ORDER BY p.id DESC
+LIMIT $5::int
+`
+
+type ListPostingsParams struct {
+	WatchID        *int64
+	CompanyID      *int64
+	IncludeRemoved bool
+	BeforeID       *int64
+	RowLimit       int32
+}
+
+type ListPostingsRow struct {
+	ID          int64
+	WatchID     int64
+	CompanyID   int64
+	CompanyName string
+	Board       string
+	Title       string
+	Location    string
+	Url         string
+	PublishedAt *time.Time
+	FirstSeenAt time.Time
+	LastSeenAt  time.Time
+	RemovedAt   *time.Time
+}
+
+// ListPostings is the inbox: postings newest first, with their watch's company and
+// board. Removed postings are left out unless include_removed is set. Keyset
+// pagination as in ListApplications: before_id is the last id of the previous page.
+func (q *Queries) ListPostings(ctx context.Context, arg ListPostingsParams) ([]ListPostingsRow, error) {
+	rows, err := q.db.Query(ctx, listPostings,
+		arg.WatchID,
+		arg.CompanyID,
+		arg.IncludeRemoved,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPostingsRow
+	for rows.Next() {
+		var i ListPostingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WatchID,
+			&i.CompanyID,
+			&i.CompanyName,
+			&i.Board,
+			&i.Title,
+			&i.Location,
+			&i.Url,
+			&i.PublishedAt,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
+			&i.RemovedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markPostingsRemoved = `-- name: MarkPostingsRemoved :execrows
 UPDATE postings
 SET removed_at = now()

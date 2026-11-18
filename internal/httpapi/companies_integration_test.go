@@ -19,13 +19,22 @@ import (
 // Every response it produces is also checked against docs/openapi.yaml.
 func newDBRouter(t *testing.T) http.Handler {
 	t.Helper()
+	h, _ := newDBRouterAndStore(t)
+	return h
+}
+
+// newDBRouterAndStore is newDBRouter plus direct access to its database, for data the
+// API can't create itself (postings come from the ingestion job).
+func newDBRouterAndStore(t *testing.T) (http.Handler, *store.Store) {
+	t.Helper()
 	pool := testdb.New(t)
+	st := store.NewStore(pool)
 	return contractChecked(t, NewRouter(Deps{
 		Version: "test",
 		DB:      pool,
-		Store:   store.NewStore(pool),
+		Store:   st,
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}))
+	})), st
 }
 
 // call sends a JSON request and decodes a JSON response into out (if non-nil).

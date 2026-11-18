@@ -84,6 +84,8 @@ func routes(a *api, d Deps) []route {
 		{"GET", "/api/v1/watches/{id}", a.getWatch},
 		{"PUT", "/api/v1/watches/{id}", a.updateWatch},
 		{"DELETE", "/api/v1/watches/{id}", a.deleteWatch},
+
+		{"GET", "/api/v1/postings", a.listPostings},
 	}
 }
 

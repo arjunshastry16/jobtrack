@@ -66,6 +66,11 @@ type Querier interface {
 	ListContacts(ctx context.Context, arg ListContactsParams) ([]Contact, error)
 	ListEnabledWatchIDs(ctx context.Context) ([]int64, error)
 	ListNotes(ctx context.Context, applicationID int64) ([]Note, error)
+	// ListPostings is the inbox: postings newest first, with their watch's company and
+	// board. Removed postings are left out unless include_removed is set. Keyset
+	// pagination as in ListApplications: before_id is the last id of the previous page.
+	//
+	ListPostings(ctx context.Context, arg ListPostingsParams) ([]ListPostingsRow, error)
 	// ListStaleApplications finds open applications whose most recent stage change is older
 	// than cutoff: the ones where it's time to follow up. wishlist (not applied yet) and
 	// final statuses are excluded. Oldest first.
