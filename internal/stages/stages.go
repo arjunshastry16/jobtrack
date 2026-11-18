@@ -31,6 +31,11 @@ const (
 // All lists every status in pipeline order.
 var All = []string{Wishlist, Applied, Screening, Interviewing, Offer, Accepted, Rejected, Withdrawn}
 
+// Pipeline is the forward path an application moves along, in order: what the stats
+// funnel counts. wishlist comes before it (not yet applied); rejected and withdrawn end
+// it.
+var Pipeline = []string{Applied, Screening, Interviewing, Offer, Accepted}
+
 // transitions maps each status to the statuses it may move to, in pipeline order.
 var transitions = map[string][]string{
 	Wishlist:     {Applied, Withdrawn},
@@ -58,4 +63,9 @@ func CanTransition(from, to string) bool {
 // The result is a copy, so callers may modify it.
 func Next(s string) []string {
 	return slices.Clone(transitions[s])
+}
+
+// Terminal reports whether s is a final status, with no moves out of it.
+func Terminal(s string) bool {
+	return Valid(s) && len(transitions[s]) == 0
 }

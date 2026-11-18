@@ -386,6 +386,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The job search at a glance, computed from the stage history
+         * @description Counts by current stage, the funnel (how many applications got to each stage or a
+         *     later one), how many heard back after applying, how long applications stayed in
+         *     each stage before moving on, and the stage they were in when rejected or withdrawn.
+         *     Every list has one entry per stage it covers, in pipeline order, zeros included.
+         */
+        get: operations["getStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -414,6 +437,56 @@ export interface components {
         };
         /** @enum {string} */
         Status: "wishlist" | "applied" | "screening" | "interviewing" | "offer" | "accepted" | "rejected" | "withdrawn";
+        Stats: {
+            /**
+             * Format: int64
+             * @description All applications.
+             */
+            applications: number;
+            /** @description Applications by current stage, one entry per status. */
+            by_status: {
+                status: components["schemas"]["Status"];
+                /** Format: int64 */
+                applications: number;
+            }[];
+            /**
+             * @description One entry per pipeline stage (applied, screening, interviewing, offer, accepted):
+             *     applications that got to it or a later one. Skipping a stage counts as passing it.
+             */
+            funnel: {
+                stage: components["schemas"]["Status"];
+                /** Format: int64 */
+                reached: number;
+            }[];
+            /**
+             * Format: int64
+             * @description Of the applications that reached "applied", those that heard back: moved past it,
+             *     or were rejected. The response rate is responded / funnel[0].reached.
+             */
+            responded: number;
+            /**
+             * @description One entry per stage an application can leave (all but rejected and withdrawn): how
+             *     long finished stays in it lasted. Current stays aren't counted. Each interview
+             *     round is its own stay.
+             */
+            time_in_stage: {
+                stage: components["schemas"]["Status"];
+                /** Format: int64 */
+                stays: number;
+                /** @description Null when there are no stays. */
+                median_days: number | null;
+                /** @description 90th percentile; null when there are no stays. */
+                p90_days: number | null;
+            }[];
+            /** @description The same stages as time_in_stage, with how many applications ended in each. */
+            exits: {
+                stage: components["schemas"]["Status"];
+                /** Format: int64 */
+                rejected: number;
+                /** Format: int64 */
+                withdrawn: number;
+            }[];
+        };
         Company: {
             /** Format: int64 */
             id: number;
@@ -1631,6 +1704,27 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    getStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stats */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Stats"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };

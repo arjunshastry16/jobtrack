@@ -105,6 +105,31 @@ type Querier interface {
 	//
 	RequeueExpiredJobs(ctx context.Context) ([]RequeueExpiredJobsRow, error)
 	SetApplicationStatus(ctx context.Context, arg SetApplicationStatusParams) error
+	StatsByStatus(ctx context.Context) ([]StatsByStatusRow, error)
+	// StatsExits counts the applications that ended (rejected or withdrawn), by the stage
+	// they were in when it happened. Applications added as already rejected have no
+	// earlier stage and aren't counted.
+	//
+	StatsExits(ctx context.Context) ([]StatsExitsRow, error)
+	// Queries behind GET /stats. They read application_events, the stage history, so they
+	// see backdated moves at the dates they happened.
+	// StatsFunnel counts, for each stage of the pipeline (passed in order, e.g. applied,
+	// screening, interviewing, offer, accepted), how many applications got to that stage or
+	// a later one. Skipping a stage (applied straight to interviewing) still counts as
+	// getting past it. rejected and withdrawn aren't in the pipeline, so they add nothing.
+	//
+	StatsFunnel(ctx context.Context, pipeline []string) ([]StatsFunnelRow, error)
+	// StatsResponded counts applications that heard back after applying: they got past the
+	// first pipeline stage (applied), or were rejected. Withdrawing yourself isn't a
+	// response, and an application still waiting in applied hasn't had one.
+	//
+	StatsResponded(ctx context.Context, pipeline []string) (int64, error)
+	// StatsTimeInStage is how long applications stayed in each stage: from an event to the
+	// application's next one. Stays still going (the application's current stage) aren't
+	// counted, so this is time to a decision, not time waited so far. Each interview round
+	// (interviewing -> interviewing) is its own stay.
+	//
+	StatsTimeInStage(ctx context.Context) ([]StatsTimeInStageRow, error)
 	UnlinkContact(ctx context.Context, arg UnlinkContactParams) (int64, error)
 	// Status is deliberately not updatable here: stage changes will go through a
 	// dedicated transition endpoint that also records the history.

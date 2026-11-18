@@ -21,6 +21,7 @@ tags:
   - name: notes
   - name: watches
   - name: postings
+  - name: stats
 
 paths:
   /healthz:
@@ -685,6 +686,24 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /api/v1/stats:
+    get:
+      tags: [stats]
+      summary: The job search at a glance, computed from the stage history
+      description: |
+        Counts by current stage, the funnel (how many applications got to each stage or a
+        later one), how many heard back after applying, how long applications stayed in
+        each stage before moving on, and the stage they were in when rejected or withdrawn.
+        Every list has one entry per stage it covers, in pipeline order, zeros included.
+      operationId: getStats
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stats" }
+        "500": { $ref: "#/components/responses/Internal" }
+
 components:
   parameters:
     Id:
@@ -775,6 +794,67 @@ components:
     Status:
       type: string
       enum: [wishlist, applied, screening, interviewing, offer, accepted, rejected, withdrawn]
+
+    Stats:
+      type: object
+      additionalProperties: false
+      required: [applications, by_status, funnel, responded, time_in_stage, exits]
+      properties:
+        applications: { type: integer, format: int64, description: All applications. }
+        by_status:
+          type: array
+          description: Applications by current stage, one entry per status.
+          items:
+            type: object
+            additionalProperties: false
+            required: [status, applications]
+            properties:
+              status: { $ref: "#/components/schemas/Status" }
+              applications: { type: integer, format: int64 }
+        funnel:
+          type: array
+          description: |
+            One entry per pipeline stage (applied, screening, interviewing, offer, accepted):
+            applications that got to it or a later one. Skipping a stage counts as passing it.
+          items:
+            type: object
+            additionalProperties: false
+            required: [stage, reached]
+            properties:
+              stage: { $ref: "#/components/schemas/Status" }
+              reached: { type: integer, format: int64 }
+        responded:
+          type: integer
+          format: int64
+          description: |
+            Of the applications that reached "applied", those that heard back: moved past it,
+            or were rejected. The response rate is responded / funnel[0].reached.
+        time_in_stage:
+          type: array
+          description: |
+            One entry per stage an application can leave (all but rejected and withdrawn): how
+            long finished stays in it lasted. Current stays aren't counted. Each interview
+            round is its own stay.
+          items:
+            type: object
+            additionalProperties: false
+            required: [stage, stays, median_days, p90_days]
+            properties:
+              stage: { $ref: "#/components/schemas/Status" }
+              stays: { type: integer, format: int64 }
+              median_days: { type: number, nullable: true, description: Null when there are no stays. }
+              p90_days: { type: number, nullable: true, description: 90th percentile; null when there are no stays. }
+        exits:
+          type: array
+          description: The same stages as time_in_stage, with how many applications ended in each.
+          items:
+            type: object
+            additionalProperties: false
+            required: [stage, rejected, withdrawn]
+            properties:
+              stage: { $ref: "#/components/schemas/Status" }
+              rejected: { type: integer, format: int64 }
+              withdrawn: { type: integer, format: int64 }
 
     Company:
       type: object

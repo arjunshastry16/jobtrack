@@ -100,3 +100,27 @@ func TestEveryStatusCanFinish(t *testing.T) {
 		}
 	}
 }
+
+func TestTerminal(t *testing.T) {
+	for _, s := range All {
+		want := s == Rejected || s == Withdrawn
+		if got := Terminal(s); got != want {
+			t.Errorf("Terminal(%q) = %v, want %v", s, got, want)
+		}
+	}
+	if Terminal("nope") {
+		t.Error(`Terminal("nope") = true, want false`)
+	}
+}
+
+func TestPipelineIsInStatusOrder(t *testing.T) {
+	// The funnel relies on Pipeline being the forward path, in the order of All.
+	last := -1
+	for _, s := range Pipeline {
+		i := slices.Index(All, s)
+		if i <= last || Terminal(s) {
+			t.Errorf("%q is out of order or final in Pipeline %v", s, Pipeline)
+		}
+		last = i
+	}
+}
