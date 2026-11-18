@@ -77,6 +77,16 @@ test: ## Run all tests (with the race detector where supported)
 lint: ## Run golangci-lint
 	golangci-lint run ./...
 
+# Pinned tool images for the ops files: workflows (actionlint, which also shellchecks
+# their run: steps) and shell scripts.
+ACTIONLINT_IMAGE := rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+SHELLCHECK_IMAGE := koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+
+.PHONY: lint-ops
+lint-ops: ## Lint GitHub workflows and shell scripts (runs the linters in Docker)
+	docker run --rm --volume "$(CURDIR):/repo:ro" --workdir /repo $(ACTIONLINT_IMAGE) -no-color
+	docker run --rm --volume "$(CURDIR):/repo:ro" --workdir /repo $(SHELLCHECK_IMAGE) scripts/*.sh
+
 .PHONY: fmt
 fmt: ## Format code (gofmt + goimports via golangci-lint)
 	golangci-lint fmt ./...

@@ -1,0 +1,166 @@
+name: Release
+
+# Publishes the container image the Pi deploys, for every commit on main that passed CI:
+#
+#   build    cross-compile the arm64 image on x86_64, push ghcr.io/<owner>/jobtrack:sha-<short>
+#   smoke    on an arm64 runner, start that exact image (by digest) against a throwaway
+#            Postgres and check it works: scripts/smoke-image.sh
+#   promote  point :main at it, which is what the Pi pulls (step 4.4)
+#
+# So :main only ever names an image that passed CI and actually started. A failed smoke
+# test leaves :main on the previous good image, and the sha- tag stays for debugging.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Re-release main by hand (e.g. after a registry outage).
+  workflow_dispatch:
+
+# Nothing by default; each job asks for only what it needs.
+permissions: {}
+
+# A newer release supersedes an older one still running.
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+env:
+  # The commit CI tested (workflow_run), or main's head (manual run).
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  build:
+    name: Build and push
+    # Only a CI run that passed, for a push to main of this repository: never a PR or a fork.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.names.outputs.image }}
+      short: ${{ steps.names.outputs.short }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+      - name: Image name and tag
+        id: names
+        run: |
+          # Registry names must be lower case.
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "short=${SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The Dockerfile's build stages run on this x86_64 runner and Go cross-compiles to
+      # arm64; the final stage only copies files, so no emulation is needed.
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.names.outputs.image }}:sha-${{ steps.names.outputs.short }}
+          build-args: VERSION=${{ steps.names.outputs.short }}
+          labels: |
+            org.opencontainers.image.title=jobtrack
+            org.opencontainers.image.description=Self-hosted job-search tracker
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+            org.opencontainers.image.version=${{ steps.names.outputs.short }}
+            org.opencontainers.image.licenses=MIT
+          # Build provenance and a software bill of materials, attached to the image.
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=release
+          cache-to: type=gha,scope=release,mode=max
+
+  smoke:
+    name: Smoke test on arm64
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The exact image that was pushed (by digest, not by tag).
+      - name: Pull
+        run: docker pull "$IMAGE"
+      - name: Smoke test
+        run: scripts/smoke-image.sh "$IMAGE" "${{ needs.build.outputs.short }}"
+
+  promote:
+    name: Tag as main
+    needs: [build, smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}
+      DIGEST: ${{ needs.build.outputs.digest }}
+      SHORT: ${{ needs.build.outputs.short }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # If main has moved on, a newer release will tag its own commit; moving :main back
+      # to this older one would deploy an old build.
+      - name: Still main's newest commit?
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$head" = "$SHA" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main is now at ${head::7}; leaving :main for that commit's release"
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Point :main at this image
+        if: steps.latest.outputs.latest == 'true'
+        # Copies the tag on the registry, by digest: nothing is rebuilt or re-pushed.
+        run: docker buildx imagetools create --tag "$IMAGE:main" "$IMAGE@$DIGEST"
+      - name: Summary
+        env:
+          LATEST: ${{ steps.latest.outputs.latest }}
+        run: |
+          {
+            echo "### Released \`sha-$SHORT\`"
+            echo
+            echo "- Image: \`$IMAGE@$DIGEST\`"
+            if [ "$LATEST" = true ]; then echo "- Tags: \`sha-$SHORT\`, \`main\`"; else echo "- Tags: \`sha-$SHORT\`"; fi
+            echo "- Smoke test on arm64: passed"
+          } >> "$GITHUB_STEP_SUMMARY"

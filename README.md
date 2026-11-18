@@ -91,6 +91,7 @@ make web-dev      # frontend on 127.0.0.1:5173, proxying API calls to :8090
 make web-test     # frontend unit tests (Vitest)
 make build        # bin/jobtrack: one binary serving the API and the web app
 make image        # the container image (jobtrack:local)
+make lint-ops     # lint the GitHub workflows and shell scripts (actionlint, shellcheck)
 make help         # list all tasks
 ```
 
@@ -115,6 +116,26 @@ docker run IMAGE                  # serve on :8090 (JOBTRACK_ALLOWED_LOGINS is r
 docker run IMAGE migrate up       # apply migrations (needs only JOBTRACK_DATABASE_URL)
 docker run IMAGE healthcheck      # exit 0 if the server is ready: the image's HEALTHCHECK
 ```
+
+### Releases
+
+Every commit on main that passes CI is released by
+[`release.yml`](.github/workflows/release.yml):
+
+1. **Build:** the arm64 image is built on an x86_64 runner and pushed to GHCR as
+   `ghcr.io/arjunshastry16/jobtrack:sha-<commit>`, with build provenance and an SBOM
+   attached.
+2. **Smoke test:** on an arm64 runner, [`scripts/smoke-image.sh`](scripts/smoke-image.sh)
+   starts that exact image (by digest) against a throwaway Postgres. It checks:
+   - migrations apply and the server becomes ready;
+   - the login check returns 401 and 403;
+   - a company can be created and listed;
+   - the web app is embedded;
+   - SIGTERM shuts it down cleanly.
+3. **Promote:** only then does `:main` move to it. The Pi deploys `:main`, so it only ever
+   gets an image that passed CI and actually started.
+
+The smoke test runs the same way locally: `make image && scripts/smoke-image.sh jobtrack:local`.
 
 ## License
 

@@ -30,6 +30,19 @@ jobs:
         with:
           version: v2.15.0 # keep in step with the local install
 
+  ops-lint:
+    name: Workflows and scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint (which also shellchecks every run: step) and shellcheck on scripts/,
+      # from the same pinned images as `make lint-ops`.
+      - name: Lint
+        run: make lint-ops
+
   generated:
     name: Generated code up to date
     runs-on: ubuntu-latest
