@@ -38,6 +38,10 @@ Everything lives in `~/stacks/jobtrack`:
 | `.deploy-failed` | The digest of the last build that failed its gate. It isn't retried until `:main` moves or you pass `--force`. |
 | `.deploy.lock` | Held while a deploy runs, so cron runs never overlap. |
 
+The metrics stack lives beside it in `~/stacks/observability`: copies of
+[`deploy/observability/`](../deploy/observability) plus a `.env` (mode 600) holding the
+database monitoring login's password.
+
 The user crontab runs:
 
 ```
@@ -54,6 +58,40 @@ The user crontab runs:
   Kuma can't poll jobtrack itself: see the comment at the top of
   [`heartbeat.sh`](../deploy/heartbeat.sh).
 - **Homepage** (`:10000`): a jobtrack tile that links to the app.
+
+## Metrics and Prometheus
+
+Prometheus scrapes the api (`api:9091`), the Pi (node_exporter) and Postgres
+(postgres_exporter) every 15 seconds, all over jobtrack's internal `backend` network. It
+isn't published anywhere; Grafana (step 5.3) will be how people look at it. Until then,
+ask it from the Pi:
+
+```bash
+cd ~/stacks/observability
+docker compose ps
+# Is every target being scraped?
+docker compose exec prometheus wget -qO- localhost:9090/api/v1/targets | grep -o '"health":"[a-z]*"'
+# Any query, e.g. the Pi's temperature:
+docker compose exec prometheus wget -qO- 'localhost:9090/api/v1/query?query=node_thermal_zone_temp'
+```
+
+Setting it up from scratch (or repairing it): copy the three files from
+`deploy/observability/` and run `./setup.sh`. It's safe to re-run: it keeps `.env`,
+creates or updates the `jobtrack_monitor` login (`pg_monitor` only, at most 3
+connections), gives `/mnt/cnimbus/jobtrack/prometheus` to the user Prometheus runs as,
+and starts the stack.
+
+Edited `prometheus.yml`? `make lint-ops` checks it with `promtool`, then reload with
+`docker compose kill --signal HUP prometheus`.
+
+Two things to know:
+
+- The stack joins jobtrack's network, so it starts only while jobtrack's stack exists.
+  `docker compose down` in `~/stacks/jobtrack` would have to remove the network: stop
+  the observability stack first.
+- node_exporter has no network-interface metrics. It runs on a Docker network, where
+  `/proc/net` shows the container's network rather than the Pi's; host networking
+  would fix that but also put the exporter on the Pi's interfaces.
 
 ## Common tasks
 

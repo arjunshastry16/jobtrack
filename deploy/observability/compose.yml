@@ -1,0 +1,128 @@
+# Observability stack on the Pi: copied to ~/stacks/observability/ with prometheus.yml
+# and setup.sh beside it. First time, run ./setup.sh (it makes .env, the data directory
+# and the database's monitoring login, then starts the stack); afterwards
+# `docker compose up -d --wait`.
+#
+#   prometheus         scrapes the three targets below every 15s; keeps 15 days, at
+#                      most 2 GB, on the USB HDD. Not published: Grafana (step 5.3) is
+#                      how people look at it.
+#   node-exporter      the Pi itself: CPU, memory, disks, temperature
+#   postgres-exporter  the jobtrack database, through a read-only monitoring login
+#
+# Everything joins jobtrack's internal backend network and nothing else, so the stack
+# has no route to the internet and no published ports. (Being on that network does let
+# it reach the api, which trusts Tailscale-User-Login; these are pinned images running
+# only the config in this directory, and nothing in them takes outside input.)
+#
+# Images are pinned to digests of releases at least 14 days old; Prometheus is the 3.13
+# long-term-support line.
+name: observability
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  networks: [backend]
+  logging: *logging
+
+services:
+  prometheus:
+    <<: *hardening
+    image: prom/prometheus:v3.13.5@sha256:aafa9d694e6a883c02db516d9f6e5b84e14195f49a2a6456a4cca815edda72b9
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Whichever limit is reached first: 15 days, or 2 GB on disk.
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Owned by nobody (65534), the user Prometheus runs as; setup.sh arranges that.
+      - ${OBSERVABILITY_DATA_DIR:-/mnt/cnimbus/jobtrack}/prometheus:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
+    # Prometheus sets its Go memory limit to 90% of this cap by itself.
+    mem_limit: 300m
+    cpus: 1.0
+    pids_limit: 100
+    stop_grace_period: 30s
+
+  node-exporter:
+    <<: *hardening
+    image: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      # Docker's and the kernel's own mounts aren't disks worth watching.
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|run|sys|var/lib/docker/.+|var/lib/containerd/.+)($$|/)
+      # These read /proc/net, which shows this container's network, not the Pi's; the
+      # Pi's network would need host networking, which would also expose the exporter.
+      - --no-collector.netdev
+      - --no-collector.netstat
+      - --no-collector.sockstat
+      - --no-collector.conntrack
+      - --no-collector.arp
+    volumes:
+      - type: bind
+        source: /proc
+        target: /host/proc
+        read_only: true
+      - type: bind
+        source: /sys
+        target: /host/sys
+        read_only: true
+      # rslave, so mounts made later (the USB HDD after a replug) show up too.
+      - type: bind
+        source: /
+        target: /rootfs
+        read_only: true
+        bind:
+          propagation: rslave
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9100/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      start_interval: 2s
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 50
+
+  postgres-exporter:
+    <<: *hardening
+    image: prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104fae0e2d84a27bb8d69b38430a11910c5382cad85d478d2bab713e
+    environment:
+      # jobtrack_monitor has only pg_monitor (read statistics), no access to the data.
+      DATA_SOURCE_URI: db:5432/jobtrack?sslmode=disable
+      DATA_SOURCE_USER: jobtrack_monitor
+      DATA_SOURCE_PASS: ${JOBTRACK_MONITOR_DB_PASSWORD:?run setup.sh, or set JOBTRACK_MONITOR_DB_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9187/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      start_interval: 2s
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 50
+
+networks:
+  # jobtrack's internal network (deploy/compose.yml), where the api and database are.
+  backend:
+    name: ${JOBTRACK_PROJECT:-jobtrack}_backend
+    external: true

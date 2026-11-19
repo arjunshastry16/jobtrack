@@ -146,6 +146,21 @@ Plus the Go runtime's and the process's standard metrics (`go_*`, `process_*`). 
 are kept low-cardinality: routes are patterns, never raw paths, and no label holds a
 company or anything personal.
 
+### Collecting them
+
+On the Pi, [`deploy/observability`](deploy/observability) runs in `~/stacks/observability`
+on jobtrack's internal network, with no published ports and no internet access:
+
+| Service | What it does | Cap |
+|---|---|---|
+| `prometheus` | Prometheus 3.13 LTS. Scrapes everything every 15 s; keeps 15 days or 2 GB, on the USB HDD. | 300 MB, 1 CPU |
+| `node-exporter` | The Pi: CPU, memory, disks, temperature. Reads `/proc`, `/sys` and `/` read-only. | 64 MB |
+| `postgres-exporter` | The database, through `jobtrack_monitor`: a login with `pg_monitor` only, so it reads statistics but no data. | 64 MB |
+
+The api's metrics listener is on `api:9091` inside the network, never on the host.
+[`setup.sh`](deploy/observability/setup.sh) does the first-time setup;
+[docs/deploy.md](docs/deploy.md#metrics-and-prometheus) has the details.
+
 ## Development
 
 Requires Go 1.27+, Docker, [golangci-lint](https://golangci-lint.run/) v2, and Node 22.12+

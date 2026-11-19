@@ -4,7 +4,8 @@
 #   db       Postgres, data on the USB HDD, on an internal network with no internet
 #   migrate  runs `jobtrack migrate up` once the database is healthy, then exits
 #   api      starts only after migrate succeeded; published on 127.0.0.1:8090 only,
-#            reached over the tailnet through `tailscale serve --https=9443`
+#            reached over the tailnet through `tailscale serve --https=9443`. Its
+#            metrics (port 9091) stay inside the backend network, for Prometheus.
 #
 # Every service is capped (memory, CPU, processes) so it can't starve Nextcloud and the
 # rest, and keeps at most 30 MB of logs.
@@ -82,6 +83,9 @@ services:
       JOBTRACK_REMINDER_HOURS: ${JOBTRACK_REMINDER_HOURS:-}
       JOBTRACK_SYNC_HOUR: ${JOBTRACK_SYNC_HOUR:-}
       JOBTRACK_LOG_LEVEL: ${JOBTRACK_LOG_LEVEL:-}
+      # Prometheus metrics on their own port, never published: Prometheus scrapes api:9091
+      # over the backend network (deploy/observability).
+      JOBTRACK_METRICS_ADDR: 0.0.0.0:9091
       # In-flight requests and jobs get 20s to finish; Docker waits 30s before killing.
       JOBTRACK_SHUTDOWN_TIMEOUT: 20s
       # Reminder hours and the nightly sync are in local time.
