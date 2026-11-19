@@ -24,6 +24,9 @@ func TestParseWorkdayURL(t *testing.T) {
 		// Search text is tidied; several filters are kept and sorted.
 		{"https://x.wd3.myworkdayjobs.com/Careers?q=++site+++reliability+&timeType=5509c0b5959810ac0029943377d47364&locations=91336993fab910af6d6fb9748af4c1df&locations=f28ae3c49d2601aff203e114d301695f",
 			"x.wd3.myworkdayjobs.com/Careers?locations=91336993fab910af6d6fb9748af4c1df&locations=f28ae3c49d2601aff203e114d301695f&q=site+reliability&timeType=5509c0b5959810ac0029943377d47364"},
+		// A company's own filter, with a long name full of hyphens (Salesforce's country filter).
+		{"https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site?CF_-_REC_-_LRV_-_Job_Posting_Anchor_-_Country_from_Job_Posting_Location_Extended=c4f78be1a8f14da0ab49ce1162348a5e",
+			"salesforce.wd12.myworkdayjobs.com/External_Career_Site?CF_-_REC_-_LRV_-_Job_Posting_Anchor_-_Country_from_Job_Posting_Location_Extended=c4f78be1a8f14da0ab49ce1162348a5e"},
 		// The canonical form parses to itself.
 		{"nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite?locationHierarchy1=" + india,
 			"nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite?locationHierarchy1=" + india},
@@ -61,6 +64,9 @@ func TestParseWorkdayURL(t *testing.T) {
 		"https://nvidia.wd5.myworkdayjobs.com/External?q=" + strings.Repeat("x", 101),
 		"https://nvidia.wd5.myworkdayjobs.com/External?" + strings.Repeat("a=2fcb99c455831013ea52b82135ba3266&", 21),
 		"https://nvidia.wd5.myworkdayjobs.com/" + strings.Repeat("x", 2000),
+		// A filter that can't be kept is refused, not dropped: dropping it would widen the watch.
+		"https://nvidia.wd5.myworkdayjobs.com/External?" + strings.Repeat("f", 101) + "=" + india,
+		"https://nvidia.wd5.myworkdayjobs.com/External?loc.country=" + india,
 	} {
 		if site, err := boards.ParseWorkdayURL(bad); err == nil {
 			t.Errorf("ParseWorkdayURL(%q) accepted: %+v", bad, site)

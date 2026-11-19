@@ -22,8 +22,11 @@ var (
 	wdHostPattern   = regexp.MustCompile(`^([a-z0-9][a-z0-9-]{0,62})\.wd[0-9]{1,3}\.myworkdayjobs\.com$`)
 	wdSitePattern   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 	wdLocalePattern = regexp.MustCompile(`^[a-z]{2}(-[A-Za-z]{2})?$`) // "en-US" in /en-US/Site
-	wdFacetName     = regexp.MustCompile(`^[A-Za-z0-9_]{1,50}$`)
-	wdFacetID       = regexp.MustCompile(`^[0-9a-f]{32}$`) // Workday ids are 32 hex digits
+	wdFacetID       = regexp.MustCompile(`^[0-9a-f]{32}$`)            // Workday ids are 32 hex digits
+	// Most filter names are short (locationCountry), but a company can define its own:
+	// Salesforce's country filter is named "CF_-_REC_-_LRV_-_Job_Posting_Anchor_-_
+	// Country_from_Job_Posting_Location_Extended" (81 characters).
+	wdFacetName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 )
 
 const (
@@ -88,8 +91,13 @@ func ParseWorkdayURL(raw string) (WorkdaySite, error) {
 			continue
 		}
 		// Filters have Workday ids as values; anything else (utm_source=…) is not a filter.
-		if !wdFacetName.MatchString(name) || !allMatch(wdFacetID, vals) {
+		if !allMatch(wdFacetID, vals) {
 			continue
+		}
+		// A filter is never dropped quietly: the watch would fetch more than the user
+		// filtered the page down to (the whole world instead of India).
+		if !wdFacetName.MatchString(name) {
+			return WorkdaySite{}, errors.New("URL has a filter whose name isn't supported")
 		}
 		site.Facets[name] = vals
 		if ids += len(vals); ids > wdMaxFacetIDs {
