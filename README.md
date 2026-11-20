@@ -153,10 +153,11 @@ with no internet access:
 
 | Service | What it does | Cap |
 |---|---|---|
-| `prometheus` | Prometheus 3.13 LTS. Scrapes everything every 15 s; keeps 15 days or 2 GB, on the USB HDD. | 300 MB, 1 CPU |
+| `prometheus` | Prometheus 3.13 LTS. Scrapes everything every 15 s and evaluates the alert rules; keeps 31 days or 2 GB, on the USB HDD. | 300 MB, 1 CPU |
 | `node-exporter` | The Pi: CPU, memory, disks, temperature. Reads `/proc`, `/sys` and `/` read-only. | 64 MB |
 | `postgres-exporter` | The database, through `jobtrack_monitor`: a login with `pg_monitor` only, so it reads statistics but no data. | 64 MB |
 | `grafana` | Grafana 13, with the data source and dashboards provisioned from git. On the tailnet at `:7443`. | 384 MB, 1 CPU |
+| `alertmanager` | Sends Prometheus's alerts to ntfy. Its own network reaches only Prometheus and the internet. | 64 MB |
 
 Prometheus and the exporters sit on jobtrack's internal network, with no published ports;
 the api's metrics listener is on `api:9091` there, never on the host. Grafana is the one
@@ -178,6 +179,22 @@ Three, in [`deploy/observability/grafana/dashboards`](deploy/observability/grafa
 They're read-only in Grafana: git is their source. A test
 ([`dashboards_test.go`](internal/metrics/dashboards_test.go)) checks each one's layout
 and data source, and fails if a panel uses a jobtrack metric the code doesn't export.
+
+## SLOs and alerts
+
+[docs/SLOs.md](docs/SLOs.md) sets three objectives and says what to do for every alert:
+
+- **Availability:** 99.5% of requests don't fail with a 5xx, over 30 days.
+- **Latency:** 95% of requests are answered within 300 ms.
+- **Reminders:** each one starts within 10 minutes of being due.
+
+The SLO alerts are multiwindow, multi-burn-rate alerts (from Google's SRE workbook): they
+fire on how fast the month's error budget is being spent, not on single errors. Alongside
+them, alerts cover the api being down, dead and stuck jobs, Postgres, and the Pi (disk,
+temperature, memory). Every rule has unit tests
+([`rules/*.test.yml`](deploy/observability/rules)) run by `promtool` in CI: the outage
+they should page for, the blip they shouldn't, when they clear. Alertmanager sends what
+fires to ntfy on my phone.
 
 ## Development
 

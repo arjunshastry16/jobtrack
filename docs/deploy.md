@@ -40,7 +40,8 @@ Everything lives in `~/stacks/jobtrack`:
 
 The metrics stack lives beside it in `~/stacks/observability`: a copy of
 [`deploy/observability/`](../deploy/observability) plus a `.env` (mode 600) holding the
-database monitoring login's password and Grafana's settings.
+database monitoring login's password and Grafana's settings, and `secrets/ntfy_url`
+(owned by the user Alertmanager runs as) with the ntfy topic alerts go to.
 
 The user crontab runs:
 
@@ -59,6 +60,8 @@ The user crontab runs:
   [`heartbeat.sh`](../deploy/heartbeat.sh).
 - **Homepage** (`:10000`): a jobtrack tile that links to the app.
 - **Grafana** (`:7443`): dashboards for the app, the Pi and Postgres.
+- **Alerts** (ntfy): SLO burn rates, the api or database down, dead jobs, a full disk, a
+  hot Pi. What each means and what to do: [SLOs.md](SLOs.md).
 
 ## Metrics and Grafana
 
@@ -84,13 +87,23 @@ docker compose exec prometheus wget -qO- 'localhost:9090/api/v1/query?query=node
 Setting it up from scratch (or repairing it): copy `deploy/observability/` with
 `cp -r deploy/observability/. ~/stacks/observability/` and run `./setup.sh`. It's safe
 to re-run. It keeps what's already in `.env` and adds what's missing: the monitoring
-password, Grafana's admin login and its tailnet address. It creates or updates the
-`jobtrack_monitor` login (`pg_monitor` only, at most 3 connections), gives the data
-directories under `/mnt/cnimbus/jobtrack` to the users Prometheus and Grafana run as, and
+password, Grafana's admin login and its tailnet address. It writes `secrets/ntfy_url`
+from jobtrack's `JOBTRACK_NTFY_URL`, creates or updates the `jobtrack_monitor` login
+(`pg_monitor` only, at most 3 connections), gives the data directories under
+`/mnt/cnimbus/jobtrack` to the users Prometheus, Alertmanager and Grafana run as, and
 starts the stack.
 
-Edited `prometheus.yml`? `make lint-ops` checks it with `promtool`, then reload with
-`docker compose kill --signal HUP prometheus`.
+Edited `prometheus.yml` or a rule? `make lint-ops` checks them with `promtool` and runs
+the rules' unit tests; then reload with `docker compose kill --signal HUP prometheus`.
+Edited `alertmanager.yml`? `make lint-ops` checks it with `amtool`; then
+`docker compose restart alertmanager`. A test notification, to check the way to ntfy:
+
+```bash
+docker compose exec alertmanager amtool --alertmanager.url=http://localhost:9093 \
+    alert add alertname=TestAlert severity=warning --annotation='summary="Just a test"'
+```
+
+It arrives about 30 seconds later and resolves by itself after 5 minutes.
 
 Changing a dashboard: Grafana won't save provisioned dashboards, so edit it there,
 use *Export > Export as JSON*, and replace the file in

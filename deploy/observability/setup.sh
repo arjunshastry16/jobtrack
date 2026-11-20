@@ -7,11 +7,13 @@
 #        the person jobtrack lets in is the one Grafana signs in
 #      - a random admin password (unused: there is no password sign-in)
 #      - Grafana's address on the tailnet, from `tailscale status`
-#   2. the monitoring login in jobtrack's database: jobtrack_monitor, a member of
+#   2. secrets/ntfy_url: the ntfy topic Alertmanager sends alerts to, which is
+#      jobtrack's JOBTRACK_NTFY_URL (the one deploy notifications use). Rewritten every
+#      run; owned by nobody, the user Alertmanager runs as, and readable only by it.
+#   3. the monitoring login in jobtrack's database: jobtrack_monitor, a member of
 #      pg_monitor only, so it reads statistics but none of the data
-#   3. Prometheus's and Grafana's data directories on the HDD, each owned by the user
-#      its service runs as
-#   4. docker compose up --wait
+#   4. the data directories on the HDD, each owned by the user its service runs as
+#   5. docker compose up --wait
 #
 # Run from ~/stacks/observability, beside compose.yml. The jobtrack stack must be up.
 set -euo pipefail
@@ -53,6 +55,25 @@ if [ -z "$(env_get .env GRAFANA_ROOT_URL)" ]; then
 	env_default GRAFANA_ROOT_URL "https://$host:7443/"
 fi
 
+ntfy_url=$(env_get "$jobtrack_dir/.env" JOBTRACK_NTFY_URL)
+[ -n "$ntfy_url" ] || {
+	echo "JOBTRACK_NTFY_URL is empty in $jobtrack_dir/.env; alerts are sent there" >&2
+	exit 1
+}
+[ -z "$(env_get "$jobtrack_dir/.env" JOBTRACK_NTFY_TOKEN)" ] || {
+	echo "JOBTRACK_NTFY_TOKEN is set, but alertmanager.yml doesn't send a token yet" >&2
+	exit 1
+}
+# Others may pass through the directory (Alertmanager has to), but not list it.
+mkdir -p secrets
+chmod 711 secrets
+# A previous run left it owned by nobody; the directory is ours, so it can go.
+rm -f secrets/ntfy_url
+(umask 077 && printf '%s' "$ntfy_url" >secrets/ntfy_url)
+docker compose run --rm --no-deps --user 0 --cap-add CHOWN --volume "$PWD/secrets:/secrets" \
+	--entrypoint chown alertmanager 65534:65534 /secrets/ntfy_url
+echo "secrets/ntfy_url ready"
+
 password=$(env_get .env JOBTRACK_MONITOR_DB_PASSWORD)
 # The password goes in on stdin, so it never appears in a process list.
 docker compose --file "$jobtrack_dir/compose.yml" exec -T db \
@@ -64,9 +85,10 @@ GRANT pg_monitor TO jobtrack_monitor;
 SQL
 echo "monitoring login jobtrack_monitor ready"
 
-# Docker creates a missing bind-mount directory as root; Prometheus runs as nobody and
-# Grafana as 472.
+# Docker creates a missing bind-mount directory as root; Prometheus and Alertmanager run
+# as nobody, Grafana as 472.
 docker compose run --rm --no-deps --user 0 --cap-add CHOWN --entrypoint chown prometheus 65534:65534 /prometheus
+docker compose run --rm --no-deps --user 0 --cap-add CHOWN --entrypoint chown alertmanager 65534:65534 /alertmanager
 docker compose run --rm --no-deps --user 0 --cap-add CHOWN --entrypoint chown grafana 472:0 /var/lib/grafana
 
 docker compose up -d --wait

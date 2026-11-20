@@ -1,0 +1,222 @@
+# Unit tests for jobtrack.rules.yml: `make lint-ops` runs
+#   promtool test rules deploy/observability/rules/*.test.yml
+# Series notation: "a+bxN" is a, then N more samples each b higher; "axN" repeats a.
+rule_files: [jobtrack.rules.yml]
+evaluation_interval: 1m
+
+tests:
+  # The usual traffic: the health probes, 3 requests a minute, all fine. Nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'jobtrack_http_requests_total{route="GET /readyz", code="200"}'
+        values: '0+3x300'
+      - series: 'jobtrack_http_request_duration_seconds_bucket{route="GET /readyz", le="0.3"}'
+        values: '0+3x300'
+      - series: 'jobtrack_http_request_duration_seconds_count{route="GET /readyz"}'
+        values: '0+3x300'
+      - series: 'up{job="jobtrack", instance="api:9091"}'
+        values: '1x300'
+    alert_rule_test:
+      - {eval_time: 5h, alertname: ErrorBudgetBurningFast, exp_alerts: []}
+      - {eval_time: 5h, alertname: ErrorBudgetBurningSlowly, exp_alerts: []}
+      - {eval_time: 5h, alertname: LatencyBudgetBurningFast, exp_alerts: []}
+      - {eval_time: 5h, alertname: LatencyBudgetBurningSlowly, exp_alerts: []}
+      - {eval_time: 5h, alertname: JobtrackDown, exp_alerts: []}
+    promql_expr_test:
+      # With no 5xx ever, the error ratio is 0 rather than missing.
+      - expr: jobtrack:http_errors:ratio_rate5m
+        eval_time: 5h
+        exp_samples: [{labels: 'jobtrack:http_errors:ratio_rate5m', value: 0}]
+
+  # Six normal hours, then the database goes away for 30 minutes: every request fails
+  # with a 503. (Six hours first, so the 6-hour window looks like it would in production.)
+  - interval: 1m
+    input_series:
+      - series: 'jobtrack_http_requests_total{route="GET /readyz", code="200"}'
+        values: '0+3x360 1080x30 1083+3x60'
+      - series: 'jobtrack_http_requests_total{route="GET /readyz", code="503"}'
+        values: '0x360 3+3x29 90x61'
+    alert_rule_test:
+      # Five minutes in: the hour has only just tipped over 14.4 times the budget.
+      - {eval_time: 365m, alertname: ErrorBudgetBurningFast, exp_alerts: []}
+      - eval_time: 370m
+        alertname: ErrorBudgetBurningFast
+        exp_alerts:
+          - exp_labels: {severity: critical, slo: availability}
+            exp_annotations:
+              summary: jobtrack is failing requests fast enough to spend its month's error budget in days
+              description: 16.71% of requests failed with a 5xx (99.5% must succeed). See docs/SLOs.md.
+      # Back at 390m. The 30-minute window keeps the fast alert going a while (half an
+      # hour of failures is 14% of the month's budget)...
+      - eval_time: 400m
+        alertname: ErrorBudgetBurningFast
+        exp_alerts:
+          - exp_labels: {severity: critical, slo: availability}
+            exp_annotations:
+              summary: jobtrack is failing requests fast enough to spend its month's error budget in days
+              description: 8.359% of requests failed with a 5xx (99.5% must succeed). See docs/SLOs.md.
+      # ...until the failures have left it.
+      - {eval_time: 425m, alertname: ErrorBudgetBurningFast, exp_alerts: []}
+      - eval_time: 400m
+        alertname: ErrorBudgetBurningSlowly
+        exp_alerts:
+          - exp_labels: {severity: warning, slo: availability}
+            exp_annotations:
+              summary: jobtrack's failed requests will use up its month's error budget
+              description: 7.519% of requests failed with a 5xx (99.5% must succeed). See docs/SLOs.md.
+
+  # Two busy days (a load test, say: 30 requests a minute, all fine and fast), then a
+  # day of the usual 3 a minute with 2% failing and 20% slow. The busy days dilute the
+  # 3-day windows below the budgets, so only the 1-day windows (3 times) catch it.
+  - interval: 1m
+    input_series:
+      - series: 'jobtrack_http_requests_total{route="GET /readyz", code="200"}'
+        values: '0+30x2880 86400+2.94x1440'
+      - series: 'jobtrack_http_requests_total{route="GET /readyz", code="503"}'
+        values: '0x2880 0+0.06x1440'
+      - series: 'jobtrack_http_request_duration_seconds_bucket{route="GET /readyz", le="0.3"}'
+        values: '0+30x2880 86400+2.4x1440'
+      - series: 'jobtrack_http_request_duration_seconds_count{route="GET /readyz"}'
+        values: '0+30x2880 86400+3x1440'
+    alert_rule_test:
+      - {eval_time: 3d, alertname: ErrorBudgetBurningFast, exp_alerts: []}
+      - {eval_time: 3d, alertname: LatencyBudgetBurningFast, exp_alerts: []}
+      - eval_time: 3d
+        alertname: LatencyBudgetBurningSlowly
+        exp_alerts:
+          - exp_labels: {severity: warning, slo: latency}
+            exp_annotations:
+              summary: jobtrack's slow requests will use up its month's latency budget
+              description: 20% of requests took over 300 ms (at most 5% may). See docs/SLOs.md.
+      - eval_time: 3d
+        alertname: ErrorBudgetBurningSlowly
+        exp_alerts:
+          - exp_labels: {severity: warning, slo: availability}
+            exp_annotations:
+              summary: jobtrack's failed requests will use up its month's error budget
+              description: 1.999% of requests failed with a 5xx (99.5% must succeed). See docs/SLOs.md.
+
+  # A steady low burn: 1% of requests fail and 10% are slow, from the start. That's
+  # between 1 and 3 times each budget, so only the slow alerts' 3-day window catches it.
+  - interval: 1m
+    input_series:
+      - series: 'jobtrack_http_requests_total{route="GET /readyz", code="200"}'
+        values: '0+2.97x420'
+      - series: 'jobtrack_http_requests_total{route="GET /readyz", code="503"}'
+        values: '0+0.03x420'
+      - series: 'jobtrack_http_request_duration_seconds_bucket{route="GET /readyz", le="0.3"}'
+        values: '0+2.7x420'
+      - series: 'jobtrack_http_request_duration_seconds_count{route="GET /readyz"}'
+        values: '0+3x420'
+    alert_rule_test:
+      - {eval_time: 7h, alertname: ErrorBudgetBurningFast, exp_alerts: []}
+      - {eval_time: 7h, alertname: LatencyBudgetBurningFast, exp_alerts: []}
+      - eval_time: 7h
+        alertname: ErrorBudgetBurningSlowly
+        exp_alerts:
+          - exp_labels: {severity: warning, slo: availability}
+            exp_annotations:
+              summary: jobtrack's failed requests will use up its month's error budget
+              description: 1% of requests failed with a 5xx (99.5% must succeed). See docs/SLOs.md.
+      - eval_time: 7h
+        alertname: LatencyBudgetBurningSlowly
+        exp_alerts:
+          - exp_labels: {severity: warning, slo: latency}
+            exp_annotations:
+              summary: jobtrack's slow requests will use up its month's latency budget
+              description: 10% of requests took over 300 ms (at most 5% may). See docs/SLOs.md.
+
+  # Half an hour of failures from 1h, then fine again. The slow alert fires, and stops
+  # once the failures have left its short windows (2 and 6 hours), though the 1-day and
+  # 3-day windows still hold them.
+  - interval: 1m
+    input_series:
+      - series: 'jobtrack_http_requests_total{route="GET /readyz", code="200"}'
+        values: '0+3x60 180x30 183+3x480'
+      - series: 'jobtrack_http_requests_total{route="GET /readyz", code="503"}'
+        values: '0x60 3+3x29 90x481'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: ErrorBudgetBurningSlowly
+        exp_alerts:
+          - exp_labels: {severity: warning, slo: availability}
+            exp_annotations:
+              summary: jobtrack's failed requests will use up its month's error budget
+              description: 25.21% of requests failed with a 5xx (99.5% must succeed). See docs/SLOs.md.
+      - {eval_time: 9h, alertname: ErrorBudgetBurningSlowly, exp_alerts: []}
+
+  # Six fast hours, then every request takes over 300 ms. With a 5% budget, the fast
+  # alert needs 72% of an hour's requests to be slow, so it takes about 45 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'jobtrack_http_request_duration_seconds_bucket{route="GET /readyz", le="0.3"}'
+        values: '0+3x360 1080x60'
+      - series: 'jobtrack_http_request_duration_seconds_count{route="GET /readyz"}'
+        values: '0+3x420'
+    alert_rule_test:
+      - {eval_time: 400m, alertname: LatencyBudgetBurningFast, exp_alerts: []}
+      - eval_time: 410m
+        alertname: LatencyBudgetBurningFast
+        exp_alerts:
+          - exp_labels: {severity: critical, slo: latency}
+            exp_annotations:
+              summary: jobtrack is answering too slowly, fast enough to spend its month's latency budget in days
+              description: 84.75% of requests took over 300 ms (at most 5% may). See docs/SLOs.md.
+
+  # The api stops answering scrapes at 10m; then its target disappears altogether.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="jobtrack", instance="api:9091"}'
+        values: '1x10 0x10'
+    alert_rule_test:
+      - {eval_time: 12m, alertname: JobtrackDown, exp_alerts: []}
+      - eval_time: 14m
+        alertname: JobtrackDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: jobtrack, instance: "api:9091"}
+            exp_annotations: &down
+              summary: Prometheus can't reach jobtrack's api
+              description: The api isn't answering on api:9091 (stopped, crashed or restarting). See docs/SLOs.md.
+      - eval_time: 40m
+        alertname: JobtrackDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: jobtrack}
+            exp_annotations: *down
+
+  # The job queue.
+  - interval: 1m
+    input_series:
+      - series: 'jobtrack_jobs_oldest_due_seconds{kind="reminder.follow_up"}'
+        values: '0 0 300 601 4000'
+      - series: 'jobtrack_jobs_oldest_due_seconds{kind="watch.fetch"}'
+        values: '0 158 0 3601 3700'
+      - series: 'jobtrack_jobs{kind="watch.fetch", state="dead"}'
+        values: '0 0 2 2 2'
+      - series: 'jobtrack_jobs{kind="reminder.follow_up", state="dead"}'
+        values: '0x4'
+    alert_rule_test:
+      - {eval_time: 2m, alertname: ReminderLate, exp_alerts: []}
+      - eval_time: 3m
+        alertname: ReminderLate
+        exp_alerts:
+          - exp_labels: {severity: critical, slo: reminders}
+            exp_annotations:
+              summary: A follow-up reminder is more than 10 minutes late
+              description: The oldest due reminder has waited 10m 1s. See docs/SLOs.md.
+      # A late reminder is ReminderLate's, not JobsStuck's, however late.
+      - eval_time: 4m
+        alertname: JobsStuck
+        exp_alerts:
+          - exp_labels: {severity: warning, kind: watch.fetch}
+            exp_annotations:
+              summary: watch.fetch jobs have waited over an hour to start
+              description: The oldest due watch.fetch job has waited 1h 1m 40s. See docs/SLOs.md.
+      - {eval_time: 2m, alertname: JobsStuck, exp_alerts: []}
+      - {eval_time: 1m, alertname: DeadJobs, exp_alerts: []}
+      - eval_time: 2m
+        alertname: DeadJobs
+        exp_alerts:
+          - exp_labels: {severity: warning, kind: watch.fetch}
+            exp_annotations:
+              summary: 2 watch.fetch job(s) failed every attempt
+              description: Jobs were given up on after their last retry. See docs/SLOs.md.

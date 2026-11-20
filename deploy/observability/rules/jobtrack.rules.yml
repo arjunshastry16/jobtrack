@@ -1,0 +1,128 @@
+# jobtrack's SLOs and alerts (docs/SLOs.md explains each one and what to do).
+# Tested by jobtrack.test.yml: `make lint-ops` runs promtool test rules.
+#
+# Severity decides the ntfy priority (alertmanager.yml): critical is high, warning is
+# the default.
+groups:
+  # One group, so its rules run in order: the alerts at the end always read ratios
+  # recorded in the same evaluation, never the previous one's.
+  - name: jobtrack-slo
+    rules:
+      # The share of requests that failed (5xx) or were slow (over 300 ms), over the
+      # windows the burn-rate alerts use. Every request counts, the health probes
+      # included: with one user they're most of the traffic, and a steady check of the
+      # api and its database is what the SLO is about.
+      - record: jobtrack:http_errors:ratio_rate5m
+        expr: (sum(rate(jobtrack_http_requests_total{code=~"5.."}[5m])) or vector(0)) / sum(rate(jobtrack_http_requests_total[5m]))
+      - record: jobtrack:http_errors:ratio_rate30m
+        expr: (sum(rate(jobtrack_http_requests_total{code=~"5.."}[30m])) or vector(0)) / sum(rate(jobtrack_http_requests_total[30m]))
+      - record: jobtrack:http_errors:ratio_rate1h
+        expr: (sum(rate(jobtrack_http_requests_total{code=~"5.."}[1h])) or vector(0)) / sum(rate(jobtrack_http_requests_total[1h]))
+      - record: jobtrack:http_errors:ratio_rate2h
+        expr: (sum(rate(jobtrack_http_requests_total{code=~"5.."}[2h])) or vector(0)) / sum(rate(jobtrack_http_requests_total[2h]))
+      - record: jobtrack:http_errors:ratio_rate6h
+        expr: (sum(rate(jobtrack_http_requests_total{code=~"5.."}[6h])) or vector(0)) / sum(rate(jobtrack_http_requests_total[6h]))
+      - record: jobtrack:http_errors:ratio_rate1d
+        expr: (sum(rate(jobtrack_http_requests_total{code=~"5.."}[1d])) or vector(0)) / sum(rate(jobtrack_http_requests_total[1d]))
+      - record: jobtrack:http_errors:ratio_rate3d
+        expr: (sum(rate(jobtrack_http_requests_total{code=~"5.."}[3d])) or vector(0)) / sum(rate(jobtrack_http_requests_total[3d]))
+
+      # 0.3 is a bucket edge of jobtrack_http_request_duration_seconds, so this is exact.
+      - record: jobtrack:http_slow:ratio_rate5m
+        expr: 1 - sum(rate(jobtrack_http_request_duration_seconds_bucket{le="0.3"}[5m])) / sum(rate(jobtrack_http_request_duration_seconds_count[5m]))
+      - record: jobtrack:http_slow:ratio_rate30m
+        expr: 1 - sum(rate(jobtrack_http_request_duration_seconds_bucket{le="0.3"}[30m])) / sum(rate(jobtrack_http_request_duration_seconds_count[30m]))
+      - record: jobtrack:http_slow:ratio_rate1h
+        expr: 1 - sum(rate(jobtrack_http_request_duration_seconds_bucket{le="0.3"}[1h])) / sum(rate(jobtrack_http_request_duration_seconds_count[1h]))
+      - record: jobtrack:http_slow:ratio_rate2h
+        expr: 1 - sum(rate(jobtrack_http_request_duration_seconds_bucket{le="0.3"}[2h])) / sum(rate(jobtrack_http_request_duration_seconds_count[2h]))
+      - record: jobtrack:http_slow:ratio_rate6h
+        expr: 1 - sum(rate(jobtrack_http_request_duration_seconds_bucket{le="0.3"}[6h])) / sum(rate(jobtrack_http_request_duration_seconds_count[6h]))
+      - record: jobtrack:http_slow:ratio_rate1d
+        expr: 1 - sum(rate(jobtrack_http_request_duration_seconds_bucket{le="0.3"}[1d])) / sum(rate(jobtrack_http_request_duration_seconds_count[1d]))
+      - record: jobtrack:http_slow:ratio_rate3d
+        expr: 1 - sum(rate(jobtrack_http_request_duration_seconds_bucket{le="0.3"}[3d])) / sum(rate(jobtrack_http_request_duration_seconds_count[3d]))
+
+      # Multiwindow, multi-burn-rate alerts (Google's SRE workbook, chapter 5). A burn
+      # rate of 1 spends the error budget in exactly the 30-day window; 14.4 spends 2%
+      # of it in an hour. Each alert needs a long window (the budget really is going)
+      # and a short one (it's still going now, so the alert clears soon after a fix).
+      # Availability: 99.5% of requests don't fail with a 5xx; the budget is 0.5%.
+      - alert: ErrorBudgetBurningFast
+        expr: |
+          (jobtrack:http_errors:ratio_rate1h > 14.4 * 0.005 and jobtrack:http_errors:ratio_rate5m > 14.4 * 0.005)
+          or
+          (jobtrack:http_errors:ratio_rate6h > 6 * 0.005 and jobtrack:http_errors:ratio_rate30m > 6 * 0.005)
+        for: 2m
+        labels: {severity: critical, slo: availability}
+        annotations:
+          summary: jobtrack is failing requests fast enough to spend its month's error budget in days
+          description: '{{ $value | humanizePercentage }} of requests failed with a 5xx (99.5% must succeed). See docs/SLOs.md.'
+      - alert: ErrorBudgetBurningSlowly
+        expr: |
+          (jobtrack:http_errors:ratio_rate1d > 3 * 0.005 and jobtrack:http_errors:ratio_rate2h > 3 * 0.005)
+          or
+          (jobtrack:http_errors:ratio_rate3d > 0.005 and jobtrack:http_errors:ratio_rate6h > 0.005)
+        for: 15m
+        labels: {severity: warning, slo: availability}
+        annotations:
+          summary: jobtrack's failed requests will use up its month's error budget
+          description: '{{ $value | humanizePercentage }} of requests failed with a 5xx (99.5% must succeed). See docs/SLOs.md.'
+
+      # Latency: 95% of requests answered within 300 ms; the budget is 5%.
+      - alert: LatencyBudgetBurningFast
+        expr: |
+          (jobtrack:http_slow:ratio_rate1h > 14.4 * 0.05 and jobtrack:http_slow:ratio_rate5m > 14.4 * 0.05)
+          or
+          (jobtrack:http_slow:ratio_rate6h > 6 * 0.05 and jobtrack:http_slow:ratio_rate30m > 6 * 0.05)
+        for: 2m
+        labels: {severity: critical, slo: latency}
+        annotations:
+          summary: jobtrack is answering too slowly, fast enough to spend its month's latency budget in days
+          description: '{{ $value | humanizePercentage }} of requests took over 300 ms (at most 5% may). See docs/SLOs.md.'
+      - alert: LatencyBudgetBurningSlowly
+        expr: |
+          (jobtrack:http_slow:ratio_rate1d > 3 * 0.05 and jobtrack:http_slow:ratio_rate2h > 3 * 0.05)
+          or
+          (jobtrack:http_slow:ratio_rate3d > 0.05 and jobtrack:http_slow:ratio_rate6h > 0.05)
+        for: 15m
+        labels: {severity: warning, slo: latency}
+        annotations:
+          summary: jobtrack's slow requests will use up its month's latency budget
+          description: '{{ $value | humanizePercentage }} of requests took over 300 ms (at most 5% may). See docs/SLOs.md.'
+
+  - name: jobtrack-alerts
+    rules:
+      # The SLO alerts need requests to measure; when the api is gone there are none.
+      - alert: JobtrackDown
+        expr: up{job="jobtrack"} == 0 or absent(up{job="jobtrack"})
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Prometheus can't reach jobtrack's api
+          description: The api isn't answering on api:9091 (stopped, crashed or restarting). See docs/SLOs.md.
+
+      # Reminders SLO: a follow-up reminder starts within 10 minutes of being due.
+      - alert: ReminderLate
+        expr: max(jobtrack_jobs_oldest_due_seconds{kind="reminder.follow_up"}) > 600
+        labels: {severity: critical, slo: reminders}
+        annotations:
+          summary: A follow-up reminder is more than 10 minutes late
+          description: The oldest due reminder has waited {{ $value | humanizeDuration }}. See docs/SLOs.md.
+
+      # Any other kind: the nightly board sync is paced (Workday is slow on purpose), so
+      # only a much longer wait means the workers are stuck.
+      - alert: JobsStuck
+        expr: max by (kind) (jobtrack_jobs_oldest_due_seconds{kind!="reminder.follow_up"}) > 3600
+        labels: {severity: warning}
+        annotations:
+          summary: '{{ $labels.kind }} jobs have waited over an hour to start'
+          description: The oldest due {{ $labels.kind }} job has waited {{ $value | humanizeDuration }}. See docs/SLOs.md.
+
+      # Dead jobs stay in the table, so this keeps firing until they're dealt with.
+      - alert: DeadJobs
+        expr: sum by (kind) (jobtrack_jobs{state="dead"}) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: '{{ $value }} {{ $labels.kind }} job(s) failed every attempt'
+          description: Jobs were given up on after their last retry. See docs/SLOs.md.

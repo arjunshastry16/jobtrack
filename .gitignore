@@ -23,3 +23,5 @@ web/node_modules/
 
 # Local dev data
 /.data/
+# Written by deploy/observability/setup.sh on the Pi; never committed.
+deploy/observability/secrets/

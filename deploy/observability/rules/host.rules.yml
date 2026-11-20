@@ -1,0 +1,68 @@
+# Alerts about what jobtrack runs on: the Pi, Postgres, and the monitoring itself
+# (docs/SLOs.md says what to do for each). Tested by host.test.yml.
+groups:
+  - name: pi
+    rules:
+      - alert: DiskAlmostFull
+        expr: |
+          1 - node_filesystem_avail_bytes{job="node", mountpoint=~"/|/mnt/cnimbus"}
+            / node_filesystem_size_bytes{job="node", mountpoint=~"/|/mnt/cnimbus"}
+          > 0.85
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: '{{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full'
+          description: / is the SD card, /mnt/cnimbus the USB disk (all of jobtrack's data). See docs/SLOs.md.
+
+      # The Pi 5 starts throttling at 80 °C.
+      - alert: PiHot
+        expr: max(node_thermal_zone_temp{job="node"}) > 75
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: The Pi's CPU is at {{ $value }} °C
+          description: It slows itself down from 80 °C. See docs/SLOs.md.
+
+      - alert: MemoryLow
+        expr: node_memory_MemAvailable_bytes{job="node"} / node_memory_MemTotal_bytes{job="node"} < 0.10
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: The Pi has {{ $value | humanizePercentage }} of its memory available
+          description: Under 10% for 10 minutes; the kernel may start killing processes. See docs/SLOs.md.
+
+  - name: postgres
+    rules:
+      # The exporter answers, but can't reach the database.
+      - alert: PostgresDown
+        expr: pg_up{job="postgres"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: jobtrack's database isn't answering
+          description: postgres_exporter can't connect to it or query it. See docs/SLOs.md.
+
+  - name: monitoring
+    rules:
+      # jobtrack itself has JobtrackDown, which is critical.
+      - alert: TargetDown
+        expr: up{job!="jobtrack"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Prometheus can't scrape {{ $labels.job }}
+          description: '{{ $labels.instance }} hasn''t answered for 5 minutes, so its alerts can''t fire. See docs/SLOs.md.'
+
+      - alert: RulesFailing
+        expr: increase(prometheus_rule_evaluation_failures_total[10m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: Prometheus failed to evaluate rules in {{ $labels.rule_group }}
+          description: Alerts in that group may not fire. See docs/SLOs.md.
+
+      - alert: AlertsNotDelivered
+        expr: increase(alertmanager_notifications_failed_total{integration="webhook"}[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: Alertmanager failed to send alerts to ntfy
+          description: This alert may not reach ntfy either; check `docker compose logs alertmanager`. See docs/SLOs.md.

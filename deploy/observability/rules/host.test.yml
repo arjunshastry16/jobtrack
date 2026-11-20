@@ -1,0 +1,100 @@
+# Unit tests for host.rules.yml (see jobtrack.test.yml for how they run).
+rule_files: [host.rules.yml]
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      # The SD card fills to 90%; the USB disk stays at 50%; /boot/firmware isn't watched.
+      - series: 'node_filesystem_avail_bytes{job="node", instance="vertex", mountpoint="/"}'
+        values: '40x5 10x20'
+      - series: 'node_filesystem_size_bytes{job="node", instance="vertex", mountpoint="/"}'
+        values: '100x25'
+      - series: 'node_filesystem_avail_bytes{job="node", instance="vertex", mountpoint="/mnt/cnimbus"}'
+        values: '50x25'
+      - series: 'node_filesystem_size_bytes{job="node", instance="vertex", mountpoint="/mnt/cnimbus"}'
+        values: '100x25'
+      - series: 'node_filesystem_avail_bytes{job="node", instance="vertex", mountpoint="/boot/firmware"}'
+        values: '1x25'
+      - series: 'node_filesystem_size_bytes{job="node", instance="vertex", mountpoint="/boot/firmware"}'
+        values: '100x25'
+      - series: 'node_thermal_zone_temp{job="node", instance="vertex", type="cpu-thermal", zone="0"}'
+        values: '50x5 80x20'
+      - series: 'node_memory_MemAvailable_bytes{job="node", instance="vertex"}'
+        values: '2000x5 300x20'
+      - series: 'node_memory_MemTotal_bytes{job="node", instance="vertex"}'
+        values: '4000x25'
+    alert_rule_test:
+      # Needs 10 minutes over 85%.
+      - {eval_time: 14m, alertname: DiskAlmostFull, exp_alerts: []}
+      - eval_time: 16m
+        alertname: DiskAlmostFull
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: vertex, mountpoint: /}
+            exp_annotations:
+              summary: / is 90% full
+              description: / is the SD card, /mnt/cnimbus the USB disk (all of jobtrack's data). See docs/SLOs.md.
+      - {eval_time: 9m, alertname: PiHot, exp_alerts: []}
+      - eval_time: 11m
+        alertname: PiHot
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: The Pi's CPU is at 80 °C
+              description: It slows itself down from 80 °C. See docs/SLOs.md.
+      - {eval_time: 14m, alertname: MemoryLow, exp_alerts: []}
+      - eval_time: 16m
+        alertname: MemoryLow
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: vertex}
+            exp_annotations:
+              summary: The Pi has 7.5% of its memory available
+              description: Under 10% for 10 minutes; the kernel may start killing processes. See docs/SLOs.md.
+
+  - interval: 1m
+    input_series:
+      - series: 'pg_up{job="postgres", instance="jobtrack-db"}'
+        values: '1x5 0x10'
+      # node_exporter stops answering; jobtrack's own target is JobtrackDown's, not this.
+      - series: 'up{job="node", instance="vertex"}'
+        values: '1x5 0x10'
+      - series: 'up{job="jobtrack", instance="api:9091"}'
+        values: '0x15'
+      - series: 'prometheus_rule_evaluation_failures_total{rule_group="/etc/prometheus/rules/host.rules.yml;pi"}'
+        values: '0x5 1x10'
+      - series: 'alertmanager_notifications_failed_total{job="alertmanager", integration="webhook", reason="other"}'
+        values: '0x5 2x10'
+      - series: 'alertmanager_notifications_failed_total{job="alertmanager", integration="email", reason="other"}'
+        values: '0x5 2x10'
+    alert_rule_test:
+      - {eval_time: 7m, alertname: PostgresDown, exp_alerts: []}
+      - eval_time: 8m
+        alertname: PostgresDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: postgres, instance: jobtrack-db}
+            exp_annotations:
+              summary: jobtrack's database isn't answering
+              description: postgres_exporter can't connect to it or query it. See docs/SLOs.md.
+      - {eval_time: 10m, alertname: TargetDown, exp_alerts: []}
+      - eval_time: 11m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: vertex}
+            exp_annotations:
+              summary: Prometheus can't scrape node
+              description: vertex hasn't answered for 5 minutes, so its alerts can't fire. See docs/SLOs.md.
+      - eval_time: 7m
+        alertname: RulesFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, rule_group: "/etc/prometheus/rules/host.rules.yml;pi"}
+            exp_annotations:
+              summary: Prometheus failed to evaluate rules in /etc/prometheus/rules/host.rules.yml;pi
+              description: Alerts in that group may not fire. See docs/SLOs.md.
+      # Only the ntfy webhook counts; the email failure series is ignored.
+      - eval_time: 7m
+        alertname: AlertsNotDelivered
+        exp_alerts:
+          - exp_labels: {severity: warning, job: alertmanager, integration: webhook, reason: other}
+            exp_annotations:
+              summary: Alertmanager failed to send alerts to ntfy
+              description: This alert may not reach ntfy either; check `docker compose logs alertmanager`. See docs/SLOs.md.

@@ -1,0 +1,49 @@
+# Alertmanager (deploy/observability/compose.yml): sends Prometheus's alerts to ntfy,
+# the same private topic as deploy notifications. The topic URL is a secret, so it's
+# read from a file setup.sh writes (secrets/ntfy_url), never from git.
+#
+# ntfy formats the payload itself with its built-in "alertmanager" template, so no relay
+# is needed. Check edits with `make lint-ops`, then `docker compose restart alertmanager`.
+route:
+  receiver: warning
+  # One notification per alert name, e.g. every full disk together.
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  # A firing alert is repeated this often until it's resolved or silenced.
+  repeat_interval: 12h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: critical
+      repeat_interval: 2h
+
+inhibit_rules:
+  # The fast-burn alert says it all; don't also send the slow one for the same SLO.
+  - source_matchers: [severity="critical", slo=~".+"]
+    target_matchers: [severity="warning"]
+    equal: [slo]
+  # With the api down, its SLOs and queue can't be measured; JobtrackDown is enough.
+  - source_matchers: [alertname="JobtrackDown"]
+    target_matchers: [alertname=~"ErrorBudget.*|LatencyBudget.*|ReminderLate|JobsStuck|DeadJobs"]
+
+receivers:
+  - name: critical
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/ntfy_url
+        send_resolved: true
+        max_alerts: 10 # ntfy messages are short; the count is still in the payload
+        http_config:
+          http_headers:
+            X-Template: {values: [alertmanager]}
+            X-Priority: {values: [high]}
+            X-Tags: {values: [rotating_light]}
+  - name: warning
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/ntfy_url
+        send_resolved: true
+        max_alerts: 10
+        http_config:
+          http_headers:
+            X-Template: {values: [alertmanager]}
+            X-Priority: {values: [default]}
+            X-Tags: {values: [warning]}

@@ -2,13 +2,15 @@
 # First time, run ./setup.sh (it makes .env, the data directories and the database's
 # monitoring login, then starts the stack); afterwards `docker compose up -d --wait`.
 #
-#   prometheus         scrapes the three targets below every 15s; keeps 15 days, at
-#                      most 2 GB, on the USB HDD. Not published: Grafana is how people
-#                      look at it.
+#   prometheus         scrapes the targets below every 15s and evaluates the alert
+#                      rules in rules/; keeps 31 days, at most 2 GB, on the USB HDD.
+#                      Not published: Grafana is how people look at it.
 #   node-exporter      the Pi itself: CPU, memory, disks, temperature
 #   postgres-exporter  the jobtrack database, through a read-only monitoring login
 #   grafana            dashboards, published on 127.0.0.1:3002 only and reached over the
 #                      tailnet through `tailscale serve --https=7443`
+#   alertmanager       sends Prometheus's alerts to ntfy (alertmanager.yml); its own
+#                      network reaches only Prometheus and the internet
 #
 # Prometheus and the exporters join jobtrack's internal backend network, with no route
 # to the internet and no published ports. (Being on that network does let them reach
@@ -41,15 +43,17 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      # Whichever limit is reached first: 15 days, or 2 GB on disk.
-      - --storage.tsdb.retention.time=15d
+      # Whichever limit is reached first: 31 days (a whole SLO window), or 2 GB on
+      # disk. It writes about 40 MB a day.
+      - --storage.tsdb.retention.time=31d
       - --storage.tsdb.retention.size=2GB
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules:/etc/prometheus/rules:ro
       # Owned by nobody (65534), the user Prometheus runs as; setup.sh arranges that.
       - ${OBSERVABILITY_DATA_DIR:-/mnt/cnimbus/jobtrack}/prometheus:/prometheus
-    # backend to scrape; grafana so Grafana can query it.
-    networks: [backend, grafana]
+    # backend to scrape; grafana so Grafana can query it; alerts to reach Alertmanager.
+    networks: [backend, grafana, alerts]
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/ready"]
       interval: 30s
@@ -186,6 +190,33 @@ services:
     cpus: 1.0
     pids_limit: 200
 
+  alertmanager:
+    <<: *hardening
+    image: prom/alertmanager:v0.34.2@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      # One Alertmanager, no cluster to gossip with.
+      - --cluster.listen-address=
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # The ntfy topic URL, owned by nobody (65534), readable only by it; setup.sh.
+      - ./secrets:/etc/alertmanager/secrets:ro
+      # Silences, and which notifications went out. Owned by nobody; setup.sh.
+      - ${OBSERVABILITY_DATA_DIR:-/mnt/cnimbus/jobtrack}/alertmanager:/alertmanager
+    # alerts for Prometheus; alerts-egress for ntfy.sh.
+    networks: [alerts, alerts-egress]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9093/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 50
+
 networks:
   # jobtrack's internal network (deploy/compose.yml), where the api and database are.
   backend:
@@ -199,3 +230,8 @@ networks:
   grafana-web:
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
+  # Prometheus and Alertmanager only.
+  alerts:
+    internal: true
+  # Alertmanager's way out to ntfy.sh. Nothing is published on it.
+  alerts-egress: {}
