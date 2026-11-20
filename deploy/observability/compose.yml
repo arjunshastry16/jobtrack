@@ -1,18 +1,20 @@
-# Observability stack on the Pi: copied to ~/stacks/observability/ with prometheus.yml
-# and setup.sh beside it. First time, run ./setup.sh (it makes .env, the data directory
-# and the database's monitoring login, then starts the stack); afterwards
-# `docker compose up -d --wait`.
+# Observability stack on the Pi: this directory is copied to ~/stacks/observability/.
+# First time, run ./setup.sh (it makes .env, the data directories and the database's
+# monitoring login, then starts the stack); afterwards `docker compose up -d --wait`.
 #
 #   prometheus         scrapes the three targets below every 15s; keeps 15 days, at
-#                      most 2 GB, on the USB HDD. Not published: Grafana (step 5.3) is
-#                      how people look at it.
+#                      most 2 GB, on the USB HDD. Not published: Grafana is how people
+#                      look at it.
 #   node-exporter      the Pi itself: CPU, memory, disks, temperature
 #   postgres-exporter  the jobtrack database, through a read-only monitoring login
+#   grafana            dashboards, published on 127.0.0.1:3002 only and reached over the
+#                      tailnet through `tailscale serve --https=7443`
 #
-# Everything joins jobtrack's internal backend network and nothing else, so the stack
-# has no route to the internet and no published ports. (Being on that network does let
-# it reach the api, which trusts Tailscale-User-Login; these are pinned images running
-# only the config in this directory, and nothing in them takes outside input.)
+# Prometheus and the exporters join jobtrack's internal backend network, with no route
+# to the internet and no published ports. (Being on that network does let them reach
+# the api, which trusts Tailscale-User-Login; these are pinned images running only the
+# config in this directory, and nothing in them takes outside input.) Grafana does take
+# outside input, so it isn't on that network: it can reach Prometheus and nothing else.
 #
 # Images are pinned to digests of releases at least 14 days old; Prometheus is the 3.13
 # long-term-support line.
@@ -46,6 +48,8 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       # Owned by nobody (65534), the user Prometheus runs as; setup.sh arranges that.
       - ${OBSERVABILITY_DATA_DIR:-/mnt/cnimbus/jobtrack}/prometheus:/prometheus
+    # backend to scrape; grafana so Grafana can query it.
+    networks: [backend, grafana]
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/ready"]
       interval: 30s
@@ -121,8 +125,77 @@ services:
     cpus: 0.25
     pids_limit: 50
 
+  grafana:
+    <<: *hardening
+    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
+    environment:
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:?run setup.sh, or set GRAFANA_ROOT_URL in .env}
+      # Sign-in is the tailnet's, as for jobtrack (docs/adr/001): tailscale serve passes
+      # the caller's login in Tailscale-User-Login, and Grafana signs that user in. Only
+      # existing users get in, and the only one is the admin, whose login is the
+      # allowlisted one. No passwords: the form and basic auth are off.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_LOGIN:?run setup.sh, or set GRAFANA_ADMIN_LOGIN in .env}
+      # Unused (no password sign-in), but it replaces the default admin/admin.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run setup.sh, or set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: Tailscale-User-Login
+      GF_AUTH_PROXY_HEADER_PROPERTY: username
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_DISABLE_SIGNOUT_MENU: "true"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      # Nothing leaves the Pi: no public dashboards or snapshots, no update checks,
+      # usage reports, news feed, avatars or plugin downloads.
+      GF_PUBLIC_DASHBOARDS_ENABLED: "false"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_ANALYTICS_FEEDBACK_LINKS_ENABLED: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      # Its own /metrics would be open to anyone through tailscale serve; nothing scrapes it.
+      GF_METRICS_ENABLED: "false"
+      GF_LOG_MODE: console
+      # Grafana doesn't size its Go heap to the container by itself. It idles at about
+      # 150 MB and needs about 200 MB while a dashboard loads.
+      GOMEMLIMIT: 280MiB
+    volumes:
+      # The data source and dashboards come from git (grafana/), read-only.
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      # Its SQLite database (users, preferences). Owned by 472, the user Grafana runs as.
+      - ${OBSERVABILITY_DATA_DIR:-/mnt/cnimbus/jobtrack}/grafana:/var/lib/grafana
+    tmpfs: [/tmp]
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3002}:3000"
+    networks: [grafana, grafana-web]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # The first start (and an upgrade) migrates Grafana's database, which took 5
+      # minutes on the USB HDD. Checks every 2s meanwhile, so it's healthy once ready.
+      start_period: 10m
+      start_interval: 2s
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 200
+
 networks:
   # jobtrack's internal network (deploy/compose.yml), where the api and database are.
   backend:
     name: ${JOBTRACK_PROJECT:-jobtrack}_backend
     external: true
+  # Grafana and Prometheus only.
+  grafana:
+    internal: true
+  # Only for Grafana's published port, which Docker can't publish from an internal
+  # network. Without NAT, nothing on it can reach the internet.
+  grafana-web:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"

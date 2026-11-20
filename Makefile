@@ -87,12 +87,13 @@ ACTIONLINT_IMAGE := rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47e
 SHELLCHECK_IMAGE := koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
 
 .PHONY: lint-ops
-lint-ops: ## Lint GitHub workflows, shell scripts, the production compose files and Prometheus's config
+lint-ops: ## Lint GitHub workflows, shell scripts, the production compose files and Prometheus's config (dashboards: make test)
 	docker run --rm --volume "$(CURDIR):/repo:ro" --workdir /repo $(ACTIONLINT_IMAGE) -no-color
 	docker run --rm --volume "$(CURDIR):/repo:ro" --workdir /repo $(SHELLCHECK_IMAGE) scripts/*.sh deploy/*.sh deploy/observability/*.sh
 	JOBTRACK_IMAGE=check JOBTRACK_DB_PASSWORD=check JOBTRACK_ALLOWED_LOGINS=check@example \
 		docker compose --file deploy/compose.yml --env-file /dev/null config --quiet
-	JOBTRACK_MONITOR_DB_PASSWORD=check \
+	JOBTRACK_MONITOR_DB_PASSWORD=check GRAFANA_ADMIN_LOGIN=check@example GRAFANA_ADMIN_PASSWORD=check \
+	GRAFANA_ROOT_URL=https://pi.example:7443/ \
 		docker compose --file deploy/observability/compose.yml --env-file /dev/null config --quiet
 	docker run --rm --volume "$(CURDIR)/deploy/observability:/cfg:ro" --entrypoint promtool $(PROMETHEUS_IMAGE) \
 		check config /cfg/prometheus.yml

@@ -1,0 +1,16 @@
+# Grafana's only data source: the stack's Prometheus, over the internal grafana network.
+# Provisioned, so it can't be edited or deleted in the UI; change it here.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus # the dashboards refer to it by this uid
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s # Prometheus's scrape interval, so $__rate_interval is right
+      prometheusType: Prometheus

@@ -148,18 +148,36 @@ company or anything personal.
 
 ### Collecting them
 
-On the Pi, [`deploy/observability`](deploy/observability) runs in `~/stacks/observability`
-on jobtrack's internal network, with no published ports and no internet access:
+On the Pi, [`deploy/observability`](deploy/observability) runs in `~/stacks/observability`,
+with no internet access:
 
 | Service | What it does | Cap |
 |---|---|---|
 | `prometheus` | Prometheus 3.13 LTS. Scrapes everything every 15 s; keeps 15 days or 2 GB, on the USB HDD. | 300 MB, 1 CPU |
 | `node-exporter` | The Pi: CPU, memory, disks, temperature. Reads `/proc`, `/sys` and `/` read-only. | 64 MB |
 | `postgres-exporter` | The database, through `jobtrack_monitor`: a login with `pg_monitor` only, so it reads statistics but no data. | 64 MB |
+| `grafana` | Grafana 13, with the data source and dashboards provisioned from git. On the tailnet at `:7443`. | 384 MB, 1 CPU |
 
-The api's metrics listener is on `api:9091` inside the network, never on the host.
-[`setup.sh`](deploy/observability/setup.sh) does the first-time setup;
-[docs/deploy.md](docs/deploy.md#metrics-and-prometheus) has the details.
+Prometheus and the exporters sit on jobtrack's internal network, with no published ports;
+the api's metrics listener is on `api:9091` there, never on the host. Grafana is the one
+that takes outside input, so it can reach Prometheus and nothing else. It signs people in
+the same way as the app: it trusts the Tailscale login from `tailscale serve`, and only
+the allowlisted login has an account. [`setup.sh`](deploy/observability/setup.sh) does
+the first-time setup; [docs/deploy.md](docs/deploy.md#metrics-and-grafana) has the details.
+
+### Dashboards
+
+Three, in [`deploy/observability/grafana/dashboards`](deploy/observability/grafana/dashboards):
+
+- **jobtrack:** request rate, 5xx share and p95 against the 300 ms target, response
+  time by route; the job queue, job runs and run time; job board fetches and new
+  postings; the process's memory against its limit.
+- **Pi (vertex):** CPU, load, memory, temperature, disk space, disk activity.
+- **Postgres:** connections, transactions, rows, cache hit ratio, table sizes, dead rows.
+
+They're read-only in Grafana: git is their source. A test
+([`dashboards_test.go`](internal/metrics/dashboards_test.go)) checks each one's layout
+and data source, and fails if a panel uses a jobtrack metric the code doesn't export.
 
 ## Development
 

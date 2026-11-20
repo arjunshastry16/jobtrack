@@ -38,9 +38,9 @@ Everything lives in `~/stacks/jobtrack`:
 | `.deploy-failed` | The digest of the last build that failed its gate. It isn't retried until `:main` moves or you pass `--force`. |
 | `.deploy.lock` | Held while a deploy runs, so cron runs never overlap. |
 
-The metrics stack lives beside it in `~/stacks/observability`: copies of
+The metrics stack lives beside it in `~/stacks/observability`: a copy of
 [`deploy/observability/`](../deploy/observability) plus a `.env` (mode 600) holding the
-database monitoring login's password.
+database monitoring login's password and Grafana's settings.
 
 The user crontab runs:
 
@@ -58,13 +58,19 @@ The user crontab runs:
   Kuma can't poll jobtrack itself: see the comment at the top of
   [`heartbeat.sh`](../deploy/heartbeat.sh).
 - **Homepage** (`:10000`): a jobtrack tile that links to the app.
+- **Grafana** (`:7443`): dashboards for the app, the Pi and Postgres.
 
-## Metrics and Prometheus
+## Metrics and Grafana
 
 Prometheus scrapes the api (`api:9091`), the Pi (node_exporter) and Postgres
-(postgres_exporter) every 15 seconds, all over jobtrack's internal `backend` network. It
-isn't published anywhere; Grafana (step 5.3) will be how people look at it. Until then,
-ask it from the Pi:
+(postgres_exporter) every 15 seconds, all over jobtrack's internal `backend` network.
+It isn't published anywhere. Grafana, on `https://<pi's tailnet name>:7443`, is how
+to look at it: `tailscale serve --bg --https=7443 http://127.0.0.1:3002` (with sudo)
+puts it on the tailnet. Grafana signs in whoever tailscale serve says is calling, if
+that login has an account; the only account is the admin, whose login is the first of
+jobtrack's `JOBTRACK_ALLOWED_LOGINS`. There's no password sign-in.
+
+Prometheus can also be asked directly from the Pi:
 
 ```bash
 cd ~/stacks/observability
@@ -75,14 +81,21 @@ docker compose exec prometheus wget -qO- localhost:9090/api/v1/targets | grep -o
 docker compose exec prometheus wget -qO- 'localhost:9090/api/v1/query?query=node_thermal_zone_temp'
 ```
 
-Setting it up from scratch (or repairing it): copy the three files from
-`deploy/observability/` and run `./setup.sh`. It's safe to re-run: it keeps `.env`,
-creates or updates the `jobtrack_monitor` login (`pg_monitor` only, at most 3
-connections), gives `/mnt/cnimbus/jobtrack/prometheus` to the user Prometheus runs as,
-and starts the stack.
+Setting it up from scratch (or repairing it): copy `deploy/observability/` with
+`cp -r deploy/observability/. ~/stacks/observability/` and run `./setup.sh`. It's safe
+to re-run. It keeps what's already in `.env` and adds what's missing: the monitoring
+password, Grafana's admin login and its tailnet address. It creates or updates the
+`jobtrack_monitor` login (`pg_monitor` only, at most 3 connections), gives the data
+directories under `/mnt/cnimbus/jobtrack` to the users Prometheus and Grafana run as, and
+starts the stack.
 
 Edited `prometheus.yml`? `make lint-ops` checks it with `promtool`, then reload with
 `docker compose kill --signal HUP prometheus`.
+
+Changing a dashboard: Grafana won't save provisioned dashboards, so edit it there,
+use *Export > Export as JSON*, and replace the file in
+`deploy/observability/grafana/dashboards/`. `make test` checks it; once it's copied to
+the Pi, Grafana picks it up within 30 seconds.
 
 Two things to know:
 

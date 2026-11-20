@@ -1,0 +1,14 @@
+# Loads the dashboards in grafana/dashboards/ (mounted at /etc/grafana/dashboards) into
+# the "jobtrack" folder. Git is their source: they can't be saved from the UI. To change
+# one, edit it in Grafana, use Export > Export as JSON, and replace the file here.
+apiVersion: 1
+
+providers:
+  - name: jobtrack
+    folder: jobtrack
+    type: file
+    allowUiUpdates: false
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
