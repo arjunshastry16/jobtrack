@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -tags webui -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/jobtrack ./cmd/api
 
 # --- runtime: no shell, no package manager, just CA certificates and the binary ---
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:aafe993665bf6200db38a02c11a9351e782a84b6a45e7f33b6695638c88e3931
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 COPY --from=build /out/jobtrack /jobtrack
 # nonroot is uid 65532: the service never runs as root.
 USER nonroot:nonroot
